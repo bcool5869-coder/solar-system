@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Solar System</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; background:#04060f; overflow:hidden; }
+  canvas { display:block; }
+  #ui {
+    position:fixed; left:16px; top:16px; z-index:2;
+    font:13px/1.6 ui-monospace, Menlo, Consolas, monospace;
+    color:#9fb3d9; background:rgba(6,10,24,.62);
+    border:1px solid rgba(120,160,255,.18); border-radius:10px;
+    padding:12px 14px; backdrop-filter:blur(8px); max-width:260px;
+  }
+  #ui h1 { font-size:14px; letter-spacing:.12em; text-transform:uppercase; color:#e8eeff; margin-bottom:8px; }
+  #ui label { display:flex; align-items:center; gap:8px; margin-top:6px; }
+  #ui input[type=range] { flex:1; accent-color:#6f9cff; }
+  #ui button {
+    margin-top:10px; width:100%; cursor:pointer; color:#cfe0ff;
+    background:rgba(90,130,255,.14); border:1px solid rgba(120,160,255,.28);
+    border-radius:7px; padding:6px 8px; font:inherit;
+  }
+  #ui button:hover { background:rgba(90,130,255,.26); }
+  #hint { margin-top:9px; font-size:11px; color:#61759c; }
+</style>
+</head>
+<body>
+<canvas id="sky"></canvas>
+
+<div id="ui">
+  <h1>Solar System</h1>
+  <label>Speed <input id="speed" type="range" min="0" max="400" value="100"></label>
+  <label>Zoom <input id="zoom" type="range" min="40" max="220" value="100"></label>
+  <button id="toggleOrbits">Toggle orbit paths</button>
+  <div id="hint">Drag to pan &middot; scroll to zoom</div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('sky');
+  const ctx = canvas.getContext('2d');
+
+  let W = 0, H = 0, DPR = 1;
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W * DPR; canvas.height = H * DPR;
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    buildStars();
+  }
+
+  // ---- starfield -------------------------------------------------------
+  let stars = [];
+  function buildStars() {
+    const n = Math.round((W * H) / 2600);
+    stars = Array.from({ length: n }, () => ({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      r: Math.random() * 1.1 + 0.25,
+      a: Math.random() * 0.6 + 0.25,
+      tw: Math.random() * Math.PI * 2,
+      ts: Math.random() * 1.8 + 0.4
+    }));
+  }
+
+  // ---- bodies ----------------------------------------------------------
+  // dist = orbit radius in px, r = draw radius, period = orbital period in years
+  const planets = [
+    { name:'Mercury', dist: 58,  r: 3.0,  period: 0.24,  color:'#a9a2a0', ring:false },
+    { name:'Venus',   dist: 82,  r: 5.4,  period: 0.62,  color:'#e0b072', ring:false },
+    { name:'Earth',   dist: 112, r: 5.8,  period: 1.00,  color:'#4b8fe0', ring:false,
+      moons:[{ dist: 13, r: 1.7, period: 0.075, color:'#c9c9c9' }] },
+    { name:'Mars',    dist: 146, r: 4.2,  period: 1.88,  color:'#c1502e', ring:false,
+      moons:[{ dist: 9,  r: 1.0, period: 0.03,  color:'#9a8b80' }] },
+    { name:'Jupiter', dist: 212, r: 15,   period: 11.86, color:'#d3a06a', ring:false,
+      moons:[{ dist: 23, r: 1.6, period: 0.05,  color:'#d9d2c4' },
+             { dist: 31, r: 1.9, period: 0.09,  color:'#b7a58c' }] },
+    { name:'Saturn',  dist: 282, r: 12.5, period: 29.45, color:'#e3cb92', ring:true,
+      moons:[{ dist: 26, r: 1.7, period: 0.07,  color:'#cdbfa5' }] },
+    { name:'Uranus',  dist: 348, r: 8.5,  period: 84.0,  color:'#8fd4dd', ring:true },
+    { name:'Neptune', dist: 406, r: 8.2,  period: 164.8, color:'#4a63c8', ring:false }
+  ];
+
+  // ---- controls --------------------------------------------------------
+  const speedEl  = document.getElementById('speed');
+  const zoomEl   = document.getElementById('zoom');
+  const orbitBtn = document.getElementById('toggleOrbits');
+
+  let showOrbits = true;
+  let zoom = 1;
+  let panX = 0, panY = 0;
+  let dragging = false, lastX = 0, lastY = 0;
+
+  orbitBtn.onclick = () => { showOrbits = !showOrbits; };
+  zoomEl.oninput = () => { zoom = zoomEl.value / 100; };
+
+  canvas.addEventListener('mousedown', e => { dragging = true; lastX = e.clientX; lastY = e.clientY; });
+  window.addEventListener('mouseup', () => { dragging = false; });
+  window.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    panX += e.clientX - lastX; panY += e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+  });
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    zoom = Math.min(2.2, Math.max(0.4, zoom * (e.deltaY < 0 ? 1.1 : 0.9)));
+    zoomEl.value = Math.round(zoom * 100);
+  }, { passive:false });
+
+  // touch: one finger pans
+  canvas.addEventListener('touchstart', e => {
+    const t = e.touches[0]; dragging = true; lastX = t.clientX; lastY = t.clientY;
+  }, { passive:true });
+  canvas.addEventListener('touchmove', e => {
+    if (!dragging) return;
+    const t = e.touches[0];
+    panX += t.clientX - lastX; panY += t.clientY - lastY;
+    lastX = t.clientX; lastY = t.clientY;
+  }, { passive:true });
+  window.addEventListener('touchend', () => { dragging = false; });
+
+  // ---- drawing helpers -------------------------------------------------
+  function shade(hex, mul) {
+    const n = parseInt(hex.slice(1), 16);
+    const c = [n >> 16 & 255, n >> 8 & 255, n & 255]
+      .map(v => Math.max(0, Math.min(255, Math.round(v * mul))));
+    return 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
+  }
+
+  function sphere(x, y, r, color, cx, cy) {
+    // lit from the sun's direction
+    const ang = Math.atan2(cy - y, cx - x);
+    const g = ctx.createRadialGradient(
+      x + Math.cos(ang) * r * 0.38, y + Math.sin(ang) * r * 0.38, r * 0.08,
+      x, y, r
+    );
+    g.addColorStop(0, shade(color, 1.45));
+    g.addColorStop(0.55, color);
+    g.addColorStop(1, shade(color, 0.28));
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function drawRing(x, y, r, tilt) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(1, tilt);
+    ctx.strokeStyle = 'rgba(226,206,160,.55)';
+    ctx.lineWidth = Math.max(1, r * 0.28);
+    ctx.beginPath(); ctx.arc(0, 0, r * 1.85, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = 'rgba(226,206,160,.22)';
+    ctx.lineWidth = Math.max(1, r * 0.16);
+    ctx.beginPath(); ctx.arc(0, 0, r * 2.35, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---- main loop -------------------------------------------------------
+  let t = 0, prev = performance.now();
+  const tilt = 0.42; // flattens orbits into ellipses for a 3/4 view
+
+  function frame(now) {
+    const dt = Math.min((now - prev) / 1000, 0.05);
+    prev = now;
+    t += dt * (speedEl.value / 100) * 0.35; // t counts in "years"
+
+    ctx.fillStyle = '#04060f';
+    ctx.fillRect(0, 0, W, H);
+
+    for (const s of stars) {
+      s.tw += dt * s.ts;
+      ctx.globalAlpha = s.a * (0.65 + 0.35 * Math.sin(s.tw));
+      ctx.fillStyle = '#dce7ff';
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    const cx = W / 2 + panX;
+    const cy = H / 2 + panY;
+
+    if (showOrbits) {
+      ctx.save();
+      ctx.translate(cx, cy); ctx.scale(1, tilt);
+      ctx.strokeStyle = 'rgba(130,165,235,.16)';
+      ctx.lineWidth = 1;
+      for (const p of planets) {
+        ctx.beginPath(); ctx.arc(0, 0, p.dist * zoom, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // sun: corona + pulsing core
+    const sunR = 26 * zoom;
+    const pulse = 1 + 0.035 * Math.sin(now / 520);
+    const glow = ctx.createRadialGradient(cx, cy, sunR * 0.2, cx, cy, sunR * 6);
+    glow.addColorStop(0,    'rgba(255,220,130,.75)');
+    glow.addColorStop(0.18, 'rgba(255,160,50,.22)');
+    glow.addColorStop(0.45, 'rgba(255,120,30,.07)');
+    glow.addColorStop(1,    'rgba(255,120,30,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(cx, cy, sunR * 6, 0, Math.PI * 2); ctx.fill();
+
+    const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, sunR * pulse);
+    core.addColorStop(0,   '#fffdf0');
+    core.addColorStop(0.5, '#ffd75e');
+    core.addColorStop(1,   '#ff9314');
+    ctx.fillStyle = core;
+    ctx.beginPath(); ctx.arc(cx, cy, sunR * pulse, 0, Math.PI * 2); ctx.fill();
+
+    // planets, sorted by depth so nearer ones draw on top
+    const drawn = planets.map(p => {
+      const a = (t / p.period) * Math.PI * 2;
+      return {
+        p,
+        x: cx + Math.cos(a) * p.dist * zoom,
+        y: cy + Math.sin(a) * p.dist * zoom * tilt
+      };
+    }).sort((u, v) => u.y - v.y);
+
+    ctx.font = '11px ui-monospace, Menlo, Consolas, monospace';
+    ctx.textAlign = 'center';
+
+    for (const { p, x, y } of drawn) {
+      const r = p.r * zoom;
+      if (p.ring) drawRing(x, y, r, 0.34);
+      sphere(x, y, r, p.color, cx, cy);
+
+      if (p.moons) {
+        for (const m of p.moons) {
+          const ma = (t / m.period) * Math.PI * 2;
+          const mx = x + Math.cos(ma) * m.dist * zoom;
+          const my = y + Math.sin(ma) * m.dist * zoom * tilt;
+          sphere(mx, my, Math.max(0.8, m.r * zoom), m.color, x, y);
+        }
+      }
+
+      ctx.fillStyle = 'rgba(190,210,250,.62)';
+      ctx.fillText(p.name, x, y - r - 7);
+    }
+
+    requestAnimationFrame(frame);
+  }
+
+  window.addEventListener('resize', resize);
+  resize();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
