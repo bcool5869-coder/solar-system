@@ -24,6 +24,8 @@
     border-radius:7px; padding:6px 8px; font:inherit;
   }
   #ui button:hover { background:rgba(90,130,255,.26); }
+  #clock { margin-top:9px; font-size:11px; color:#7f93bb; }
+  #clock b { color:#c9d8f5; font-weight:600; }
   #hint { margin-top:9px; font-size:11px; color:#61759c; }
 </style>
 </head>
@@ -35,6 +37,8 @@
   <label>Speed <input id="speed" type="range" min="0" max="400" value="100"></label>
   <label>Zoom <input id="zoom" type="range" min="40" max="220" value="100"></label>
   <button id="toggleOrbits">Toggle orbit paths</button>
+  <button id="toggleDrift">Galactic drift: on</button>
+  <div id="clock"></div>
   <div id="hint">Drag to pan &middot; scroll to zoom</div>
 </div>
 
@@ -107,7 +111,15 @@
   let panX = 0, panY = 0;
   let dragging = false, lastX = 0, lastY = 0;
 
+  const driftBtn = document.getElementById('toggleDrift');
+  const clockEl  = document.getElementById('clock');
+  let drift = true;
+
   orbitBtn.onclick = () => { showOrbits = !showOrbits; };
+  driftBtn.onclick = () => {
+    drift = !drift;
+    driftBtn.textContent = 'Galactic drift: ' + (drift ? 'on' : 'off');
+  };
   zoomEl.oninput = () => { zoom = zoomEl.value / 100; };
 
   canvas.addEventListener('mousedown', e => { dragging = true; lastX = e.clientX; lastY = e.clientY; });
@@ -171,7 +183,7 @@
   }
 
   // ---- main loop -------------------------------------------------------
-  let t = 0, prev = performance.now();
+  let t = 0, tick = 0, prev = performance.now();
   const tilt = 0.42; // flattens orbits into ellipses for a 3/4 view
 
   function frame(now) {
@@ -181,6 +193,21 @@
 
     ctx.fillStyle = '#04060f';
     ctx.fillRect(0, 0, W, H);
+
+    // The whole system is barrelling around the galactic centre at ~230 km/s,
+    // heading roughly toward Hercules. We hold the sun on screen and let the
+    // field stream past instead; brighter (nearer) stars slide faster, which
+    // is the parallax that makes the motion read as motion.
+    if (drift) {
+      const v = dt * (speedEl.value / 100) * 26;
+      for (const s of stars) {
+        const near = s.r / 1.35;                 // bigger star = closer to us
+        s.x += v * 0.92 * (0.25 + near);
+        s.y += v * 0.39 * (0.25 + near);
+        if (s.x > W + 2) { s.x = -2; s.y = Math.random() * H; }
+        if (s.y > H + 2) { s.y = -2; s.x = Math.random() * W; }
+      }
+    }
 
     for (const s of stars) {
       s.tw += dt * s.ts;
@@ -274,6 +301,15 @@
 
       ctx.fillStyle = 'rgba(190,210,250,.62)';
       ctx.fillText(p.name, x, y - r - 7);
+    }
+
+    if (++tick % 12 === 0) {
+      // 230 km/s around the galactic centre; one lap takes ~230 million years
+      const km = t * 230 * 3.156e7;
+      clockEl.innerHTML =
+        'elapsed <b>' + t.toFixed(1) + '</b> yr<br>' +
+        'travelled <b>' + km.toExponential(2) + '</b> km<br>' +
+        'galactic orbit <b>' + (t / 230e6 * 100).toExponential(1) + '%</b>';
     }
 
     requestAnimationFrame(frame);
