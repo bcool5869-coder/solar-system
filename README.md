@@ -40,6 +40,7 @@ because it barely moves along its orbit in the time the Sun covers that ground.
 | View | Switch between helical and flat |
 | Orbit paths | Show or hide the orbit ellipses |
 | Helix trails | Show or hide the trails behind each planet |
+| Panel header / `H` | Collapse or restore the control panel |
 
 The readout tracks elapsed years, distance covered around the galaxy, and how
 much of one galactic orbit that adds up to. A full lap takes ~230 million years,

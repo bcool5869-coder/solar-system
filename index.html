@@ -15,7 +15,10 @@
     border:1px solid rgba(120,160,255,.18); border-radius:10px;
     padding:12px 14px; backdrop-filter:blur(8px); max-width:274px;
   }
-  #ui h1 { font-size:14px; letter-spacing:.12em; text-transform:uppercase; color:#e8eeff; margin-bottom:8px; }
+  #chev { font-size:11px; color:#7f93bb; letter-spacing:0; }
+  #panelBody { margin-top:8px; }
+  #ui.collapsed { padding:9px 14px; }
+  #ui.collapsed #panelBody { display:none; }
   #ui label { display:flex; align-items:center; gap:8px; margin-top:6px; }
   #ui input[type=range] { flex:1; accent-color:#6f9cff; }
   #ui button {
@@ -24,6 +27,14 @@
     border-radius:7px; padding:6px 8px; font:inherit;
   }
   #ui button:hover { background:rgba(90,130,255,.26); }
+  /* the panel header is a button too, but shouldn't look like an action */
+  #ui #panelToggle {
+    display:flex; align-items:center; justify-content:space-between; gap:14px;
+    margin:0; padding:0; background:none; border:0;
+    font-size:14px; letter-spacing:.12em; text-transform:uppercase; color:#e8eeff;
+  }
+  #ui #panelToggle:hover { background:none; color:#fff; }
+  #ui #panelToggle:hover #chev { color:#cfe0ff; }
   #clock { margin-top:9px; font-size:11px; color:#7f93bb; }
   #clock b { color:#c9d8f5; font-weight:600; }
   #hint { margin-top:9px; font-size:11px; color:#61759c; }
@@ -33,14 +44,18 @@
 <canvas id="sky"></canvas>
 
 <div id="ui">
-  <h1>Solar System</h1>
-  <label>Speed <input id="speed" type="range" min="0" max="400" value="100"></label>
-  <label>Zoom <input id="zoom" type="range" min="40" max="220" value="100"></label>
-  <button id="toggleView">View: helical (60&deg; tilt)</button>
-  <button id="toggleOrbits">Orbit paths: on</button>
-  <button id="toggleTrails">Helix trails: on</button>
-  <div id="clock"></div>
-  <div id="hint">Drag to pan &middot; scroll to zoom</div>
+  <button id="panelToggle" aria-expanded="true" aria-controls="panelBody">
+    <span>Solar System</span><span id="chev">hide</span>
+  </button>
+  <div id="panelBody">
+    <label>Speed <input id="speed" type="range" min="0" max="400" value="100"></label>
+    <label>Zoom <input id="zoom" type="range" min="40" max="220" value="100"></label>
+    <button id="toggleView">View: helical (60&deg; tilt)</button>
+    <button id="toggleOrbits">Orbit paths: on</button>
+    <button id="toggleTrails">Helix trails: on</button>
+    <div id="clock"></div>
+    <div id="hint">Drag to pan &middot; scroll to zoom &middot; H to hide</div>
+  </div>
 </div>
 
 <script>
@@ -177,6 +192,21 @@
     planets.forEach(p => { p.trail.length = 0; });
   };
   zoomEl.oninput = () => { zoom = zoomEl.value / 100; };
+
+  // collapse the panel out of the way. The controls stay in the DOM while
+  // hidden, so their values keep driving the animation.
+  const ui = document.getElementById('ui');
+  const panelBtn = document.getElementById('panelToggle');
+  const chev = document.getElementById('chev');
+  function togglePanel() {
+    const hidden = ui.classList.toggle('collapsed');
+    chev.textContent = hidden ? 'show' : 'hide';
+    panelBtn.setAttribute('aria-expanded', String(!hidden));
+  }
+  panelBtn.onclick = togglePanel;
+  window.addEventListener('keydown', e => {
+    if (e.key === 'h' || e.key === 'H') togglePanel();
+  });
 
   canvas.addEventListener('mousedown', e => { dragging = true; lastX = e.clientX; lastY = e.clientY; });
   window.addEventListener('mouseup', () => { dragging = false; });
