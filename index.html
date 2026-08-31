@@ -13,7 +13,7 @@
     font:13px/1.6 ui-monospace, Menlo, Consolas, monospace;
     color:#9fb3d9; background:rgba(6,10,24,.62);
     border:1px solid rgba(120,160,255,.18); border-radius:10px;
-    padding:12px 14px; backdrop-filter:blur(8px); max-width:270px;
+    padding:12px 14px; backdrop-filter:blur(8px); max-width:274px;
   }
   #ui h1 { font-size:14px; letter-spacing:.12em; text-transform:uppercase; color:#e8eeff; margin-bottom:8px; }
   #ui label { display:flex; align-items:center; gap:8px; margin-top:6px; }
@@ -36,7 +36,7 @@
   <h1>Solar System</h1>
   <label>Speed <input id="speed" type="range" min="0" max="400" value="100"></label>
   <label>Zoom <input id="zoom" type="range" min="40" max="220" value="100"></label>
-  <button id="toggleView">View: helical (travelling)</button>
+  <button id="toggleView">View: helical (60&deg; tilt)</button>
   <button id="toggleOrbits">Orbit paths: on</button>
   <button id="toggleTrails">Helix trails: on</button>
   <div id="clock"></div>
@@ -104,16 +104,49 @@
     };
   });
 
-  // ---- views -----------------------------------------------------------
-  // The solar system's orbital plane is steeply inclined to its direction of
-  // travel round the galaxy, so as the sun moves forward the planets sweep
-  // across the line of motion and trail out behind it as helices. "helical"
-  // stands that disc up edge-on; "flat" is the familiar top-down chart view.
+  // ---- geometry --------------------------------------------------------
+  // Orbits are built as real circles in 3D and then rotated, so the tilt is an
+  // actual angle rather than a squashed axis.
+  //
+  //   tilt = angle between the orbital plane and the sun's direction of travel
+  //          through the galaxy. The solar apex sits about 60 deg out of the
+  //          ecliptic, which is why the planets corkscrew across the line of
+  //          motion instead of trailing flat behind.
+  //   cam  = how far the camera is lifted above that line of motion.
+  //
+  // Screen +x is the direction of travel, so trails stream off to the left.
   const VIEWS = {
-    helical: { sx: 0.34, sy: 1,    depth: a => Math.cos(a), ringSx: 0.32, ringSy: 1 },
-    flat:    { sx: 1,    sy: 0.42, depth: a => Math.sin(a), ringSx: 1,    ringSy: 0.34 }
+    helical: { tilt: 60, cam: 20, label: 'helical (60° tilt)' },
+    flat:    { tilt: 0,  cam: 25, label: 'flat (top-down)' }
   };
+
   let viewName = 'helical';
+  let view;
+  function setView(name) {
+    viewName = name;
+    const v = VIEWS[name];
+    const th = v.tilt * Math.PI / 180, cm = v.cam * Math.PI / 180;
+    view = {
+      cosT: Math.cos(th), sinT: Math.sin(th),
+      cosC: Math.cos(cm), sinC: Math.sin(cm),
+      label: v.label
+    };
+  }
+  setView('helical');
+
+  // a = angle around the orbit, d = orbit radius. Returns screen offset from
+  // the centre of the orbit, plus a depth value for painter's-order sorting.
+  function project(a, d) {
+    const ca = Math.cos(a), sa = Math.sin(a);
+    const x =  ca * d * view.cosT;      // tilt about the direction of travel
+    const y = -ca * d * view.sinT;
+    const z =  sa * d;
+    return {
+      x,
+      y: y * view.cosC - z * view.sinC, // then lift the camera
+      depth: y * view.sinC + z * view.cosC
+    };
+  }
 
   // ---- controls --------------------------------------------------------
   const speedEl   = document.getElementById('speed');
@@ -139,8 +172,8 @@
     if (!showTrails) planets.forEach(p => { p.trail.length = 0; });
   };
   viewBtn.onclick = () => {
-    viewName = viewName === 'helical' ? 'flat' : 'helical';
-    viewBtn.textContent = 'View: ' + (viewName === 'helical' ? 'helical (travelling)' : 'flat (top-down)');
+    setView(viewName === 'helical' ? 'flat' : 'helical');
+    viewBtn.textContent = 'View: ' + view.label;
     planets.forEach(p => { p.trail.length = 0; });
   };
   zoomEl.oninput = () => { zoom = zoomEl.value / 100; };
@@ -191,17 +224,23 @@
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
   }
 
-  function drawRing(x, y, r, view) {
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.scale(view.ringSx, view.ringSy);
+  // a tilted circle is no longer an axis-aligned ellipse, so trace it
+  function ringPath(ox, oy, d, steps) {
+    ctx.beginPath();
+    for (let i = 0; i <= steps; i++) {
+      const q = project((i / steps) * Math.PI * 2, d);
+      if (i === 0) ctx.moveTo(ox + q.x, oy + q.y);
+      else         ctx.lineTo(ox + q.x, oy + q.y);
+    }
+  }
+
+  function drawRing(x, y, r) {
     ctx.strokeStyle = 'rgba(226,206,160,.55)';
     ctx.lineWidth = Math.max(1, r * 0.28);
-    ctx.beginPath(); ctx.arc(0, 0, r * 1.85, 0, Math.PI * 2); ctx.stroke();
+    ringPath(x, y, r * 1.85, 40); ctx.stroke();
     ctx.strokeStyle = 'rgba(226,206,160,.22)';
     ctx.lineWidth = Math.max(1, r * 0.16);
-    ctx.beginPath(); ctx.arc(0, 0, r * 2.35, 0, Math.PI * 2); ctx.stroke();
-    ctx.restore();
+    ringPath(x, y, r * 2.35, 40); ctx.stroke();
   }
 
   // ---- main loop -------------------------------------------------------
@@ -213,8 +252,6 @@
     prev = now;
     const rate = speedEl.value / 100;
     t += dt * rate * 0.35;                 // t counts in "years"
-
-    const view = VIEWS[viewName];
 
     // The sun is hauling the whole system round the galactic centre at
     // ~230 km/s. We hold it on screen and let everything else stream past.
@@ -237,39 +274,34 @@
     ctx.globalAlpha = 1;
 
     // the sun also wobbles around the barycenter as Jupiter and Saturn pull on it
-    const bary = (t / 11.86) * Math.PI * 2;
-    const bary2 = (t / 29.45) * Math.PI * 2;
-    const cx = W / 2 + panX + (Math.cos(bary) * 9 + Math.cos(bary2) * 4) * zoom * view.sx;
-    const cy = H / 2 + panY + (Math.sin(bary) * 9 + Math.sin(bary2) * 4) * zoom * view.sy;
+    const w1 = project((t / 11.86) * Math.PI * 2, 9 * zoom);
+    const w2 = project((t / 29.45) * Math.PI * 2, 4 * zoom);
+    const cx = W / 2 + panX + w1.x + w2.x;
+    const cy = H / 2 + panY + w1.y + w2.y;
     const spin = t * (365 / 25) * Math.PI * 2;   // solar rotation, ~25 days
 
     if (showOrbits) {
-      ctx.save();
-      ctx.translate(cx, cy); ctx.scale(view.sx, view.sy);
       ctx.strokeStyle = 'rgba(130,165,235,.16)';
       ctx.lineWidth = 1;
-      for (const p of planets) {
-        ctx.beginPath(); ctx.arc(0, 0, p.dist * zoom, 0, Math.PI * 2); ctx.stroke();
-      }
-      ctx.restore();
+      for (const p of planets) { ringPath(cx, cy, p.dist * zoom, 96); ctx.stroke(); }
     }
 
     // work out where each planet is, and record the helix it leaves behind
     const drawn = planets.map(p => {
       const a = (t / p.period) * Math.PI * 2;
-      const x = cx + Math.cos(a) * p.dist * zoom * view.sx;
-      const y = cy + Math.sin(a) * p.dist * zoom * view.sy;
+      const q = project(a, p.dist * zoom);
+      const x = cx + q.x, y = cy + q.y;
 
       if (showTrails) {
         // existing trail points fall back as the system advances, which is
         // what turns a closed orbit into an open corkscrew
-        for (const q of p.trail) q.x -= travel;
+        for (const s of p.trail) s.x -= travel;
         p.trail.push({ x, y });
         while (p.trail.length > TRAIL_MAX || (p.trail.length && p.trail[0].x < -60)) {
           p.trail.shift();
         }
       }
-      return { p, a, x, y, depth: view.depth(a) };
+      return { p, x, y, depth: q.depth };
     }).sort((u, v) => u.depth - v.depth);     // far side first
 
     if (showTrails) {
@@ -328,17 +360,15 @@
     ctx.font = '11px ui-monospace, Menlo, Consolas, monospace';
     ctx.textAlign = 'center';
 
-    for (const { p, a, x, y } of drawn) {
+    for (const { p, x, y } of drawn) {
       const r = p.r * zoom;
-      if (p.ring) drawRing(x, y, r, view);
+      if (p.ring) drawRing(x, y, r);
       sphere(x, y, r, p.color, cx, cy);
 
       if (p.moons) {
         for (const m of p.moons) {
-          const ma = (t / m.period) * Math.PI * 2;
-          const mx = x + Math.cos(ma) * m.dist * zoom * view.sx;
-          const my = y + Math.sin(ma) * m.dist * zoom * view.sy;
-          sphere(mx, my, Math.max(0.8, m.r * zoom), m.color, x, y);
+          const q = project((t / m.period) * Math.PI * 2, m.dist * zoom);
+          sphere(x + q.x, y + q.y, Math.max(0.8, m.r * zoom), m.color, x, y);
         }
       }
 

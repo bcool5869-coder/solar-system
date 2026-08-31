@@ -14,13 +14,18 @@ An animated solar system that runs in the browser. Single self-contained `index.
 
 ## The two views
 
-**Helical (default).** The solar system's orbital disc is steeply inclined to its
-direction of travel around the galaxy. The Sun is hauling everything along at
-~230 km/s, so the planets sweep across the line of motion and trail out behind
-it as corkscrews rather than tracing closed loops. The disc stands edge-on here
-and the planets leave helical trails.
+**Helical (default).** The Sun is hauling the whole system around the galactic
+centre at ~230 km/s, and the solar apex — the direction it's heading — sits
+roughly 60° out of the ecliptic. So the planets sweep across the line of motion
+and trail out behind as corkscrews instead of tracing closed loops.
 
-**Flat.** The familiar top-down chart view, with the disc lying flat.
+Orbits are built as real circles in 3D and rotated by that 60°, so the tilt is
+an actual angle rather than a squashed axis. That's why the orbit paths render
+as rotated ellipses rather than axis-aligned ones, and why the rings on Saturn
+and Uranus sit in the same plane.
+
+**Flat.** The familiar top-down chart view, with the disc lying flat. Same
+projection, tilt set to 0.
 
 The inner planets wind tight helices; Neptune's is nearly a straight line,
 because it barely moves along its orbit in the time the Sun covers that ground.
