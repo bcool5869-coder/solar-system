@@ -13,13 +13,13 @@
     font:13px/1.6 ui-monospace, Menlo, Consolas, monospace;
     color:#9fb3d9; background:rgba(6,10,24,.62);
     border:1px solid rgba(120,160,255,.18); border-radius:10px;
-    padding:12px 14px; backdrop-filter:blur(8px); max-width:260px;
+    padding:12px 14px; backdrop-filter:blur(8px); max-width:270px;
   }
   #ui h1 { font-size:14px; letter-spacing:.12em; text-transform:uppercase; color:#e8eeff; margin-bottom:8px; }
   #ui label { display:flex; align-items:center; gap:8px; margin-top:6px; }
   #ui input[type=range] { flex:1; accent-color:#6f9cff; }
   #ui button {
-    margin-top:10px; width:100%; cursor:pointer; color:#cfe0ff;
+    margin-top:8px; width:100%; cursor:pointer; color:#cfe0ff;
     background:rgba(90,130,255,.14); border:1px solid rgba(120,160,255,.28);
     border-radius:7px; padding:6px 8px; font:inherit;
   }
@@ -36,8 +36,9 @@
   <h1>Solar System</h1>
   <label>Speed <input id="speed" type="range" min="0" max="400" value="100"></label>
   <label>Zoom <input id="zoom" type="range" min="40" max="220" value="100"></label>
-  <button id="toggleOrbits">Toggle orbit paths</button>
-  <button id="toggleDrift">Galactic drift: on</button>
+  <button id="toggleView">View: helical (travelling)</button>
+  <button id="toggleOrbits">Orbit paths: on</button>
+  <button id="toggleTrails">Helix trails: on</button>
   <div id="clock"></div>
   <div id="hint">Drag to pan &middot; scroll to zoom</div>
 </div>
@@ -89,6 +90,8 @@
     { name:'Neptune', dist: 406, r: 8.2,  period: 164.8, color:'#4a63c8', ring:false }
   ];
 
+  planets.forEach(p => { p.trail = []; });
+
   // surface blobs on the sun, so its rotation is actually visible
   const granules = Array.from({ length: 26 }, () => {
     const y = (Math.random() * 2 - 1) * 0.82;
@@ -101,24 +104,44 @@
     };
   });
 
+  // ---- views -----------------------------------------------------------
+  // The solar system's orbital plane is steeply inclined to its direction of
+  // travel round the galaxy, so as the sun moves forward the planets sweep
+  // across the line of motion and trail out behind it as helices. "helical"
+  // stands that disc up edge-on; "flat" is the familiar top-down chart view.
+  const VIEWS = {
+    helical: { sx: 0.34, sy: 1,    depth: a => Math.cos(a), ringSx: 0.32, ringSy: 1 },
+    flat:    { sx: 1,    sy: 0.42, depth: a => Math.sin(a), ringSx: 1,    ringSy: 0.34 }
+  };
+  let viewName = 'helical';
+
   // ---- controls --------------------------------------------------------
-  const speedEl  = document.getElementById('speed');
-  const zoomEl   = document.getElementById('zoom');
-  const orbitBtn = document.getElementById('toggleOrbits');
+  const speedEl   = document.getElementById('speed');
+  const zoomEl    = document.getElementById('zoom');
+  const orbitBtn  = document.getElementById('toggleOrbits');
+  const viewBtn   = document.getElementById('toggleView');
+  const trailBtn  = document.getElementById('toggleTrails');
+  const clockEl   = document.getElementById('clock');
 
   let showOrbits = true;
+  let showTrails = true;
   let zoom = 1;
   let panX = 0, panY = 0;
   let dragging = false, lastX = 0, lastY = 0;
 
-  const driftBtn = document.getElementById('toggleDrift');
-  const clockEl  = document.getElementById('clock');
-  let drift = true;
-
-  orbitBtn.onclick = () => { showOrbits = !showOrbits; };
-  driftBtn.onclick = () => {
-    drift = !drift;
-    driftBtn.textContent = 'Galactic drift: ' + (drift ? 'on' : 'off');
+  orbitBtn.onclick = () => {
+    showOrbits = !showOrbits;
+    orbitBtn.textContent = 'Orbit paths: ' + (showOrbits ? 'on' : 'off');
+  };
+  trailBtn.onclick = () => {
+    showTrails = !showTrails;
+    trailBtn.textContent = 'Helix trails: ' + (showTrails ? 'on' : 'off');
+    if (!showTrails) planets.forEach(p => { p.trail.length = 0; });
+  };
+  viewBtn.onclick = () => {
+    viewName = viewName === 'helical' ? 'flat' : 'helical';
+    viewBtn.textContent = 'View: ' + (viewName === 'helical' ? 'helical (travelling)' : 'flat (top-down)');
+    planets.forEach(p => { p.trail.length = 0; });
   };
   zoomEl.oninput = () => { zoom = zoomEl.value / 100; };
 
@@ -155,9 +178,8 @@
     return 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
   }
 
-  function sphere(x, y, r, color, cx, cy) {
-    // lit from the sun's direction
-    const ang = Math.atan2(cy - y, cx - x);
+  function sphere(x, y, r, color, lx, ly) {
+    const ang = Math.atan2(ly - y, lx - x);   // lit from the sun's direction
     const g = ctx.createRadialGradient(
       x + Math.cos(ang) * r * 0.38, y + Math.sin(ang) * r * 0.38, r * 0.08,
       x, y, r
@@ -169,10 +191,10 @@
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
   }
 
-  function drawRing(x, y, r, tilt) {
+  function drawRing(x, y, r, view) {
     ctx.save();
     ctx.translate(x, y);
-    ctx.scale(1, tilt);
+    ctx.scale(view.ringSx, view.ringSy);
     ctx.strokeStyle = 'rgba(226,206,160,.55)';
     ctx.lineWidth = Math.max(1, r * 0.28);
     ctx.beginPath(); ctx.arc(0, 0, r * 1.85, 0, Math.PI * 2); ctx.stroke();
@@ -184,32 +206,29 @@
 
   // ---- main loop -------------------------------------------------------
   let t = 0, tick = 0, prev = performance.now();
-  const tilt = 0.42; // flattens orbits into ellipses for a 3/4 view
+  const TRAIL_MAX = 260;
 
   function frame(now) {
     const dt = Math.min((now - prev) / 1000, 0.05);
     prev = now;
-    t += dt * (speedEl.value / 100) * 0.35; // t counts in "years"
+    const rate = speedEl.value / 100;
+    t += dt * rate * 0.35;                 // t counts in "years"
+
+    const view = VIEWS[viewName];
+
+    // The sun is hauling the whole system round the galactic centre at
+    // ~230 km/s. We hold it on screen and let everything else stream past.
+    const travel = dt * rate * 34;
 
     ctx.fillStyle = '#04060f';
     ctx.fillRect(0, 0, W, H);
 
-    // The whole system is barrelling around the galactic centre at ~230 km/s,
-    // heading roughly toward Hercules. We hold the sun on screen and let the
-    // field stream past instead; brighter (nearer) stars slide faster, which
-    // is the parallax that makes the motion read as motion.
-    if (drift) {
-      const v = dt * (speedEl.value / 100) * 26;
-      for (const s of stars) {
-        const near = s.r / 1.35;                 // bigger star = closer to us
-        s.x += v * 0.92 * (0.25 + near);
-        s.y += v * 0.39 * (0.25 + near);
-        if (s.x > W + 2) { s.x = -2; s.y = Math.random() * H; }
-        if (s.y > H + 2) { s.y = -2; s.x = Math.random() * W; }
-      }
-    }
-
+    // starfield: brighter (nearer) stars slide faster — that parallax is
+    // what makes the motion read as motion rather than as a static field
     for (const s of stars) {
+      const near = s.r / 1.35;
+      s.x -= travel * (0.25 + near);
+      if (s.x < -2) { s.x = W + 2; s.y = Math.random() * H; }
       s.tw += dt * s.ts;
       ctx.globalAlpha = s.a * (0.65 + 0.35 * Math.sin(s.tw));
       ctx.fillStyle = '#dce7ff';
@@ -217,23 +236,57 @@
     }
     ctx.globalAlpha = 1;
 
-    // The sun isn't fixed: it wobbles around the barycenter as Jupiter and
-    // Saturn tug on it, and it spins on its own axis (~25 days at the equator).
-    const bary = (t / 11.86) * Math.PI * 2;          // dominated by Jupiter
-    const bary2 = (t / 29.45) * Math.PI * 2;         // Saturn's smaller pull
-    const cx = W / 2 + panX + (Math.cos(bary) * 9 + Math.cos(bary2) * 4) * zoom;
-    const cy = H / 2 + panY + (Math.sin(bary) * 9 + Math.sin(bary2) * 4) * zoom * tilt;
-    const spin = t * (365 / 25) * Math.PI * 2;       // solar rotation
+    // the sun also wobbles around the barycenter as Jupiter and Saturn pull on it
+    const bary = (t / 11.86) * Math.PI * 2;
+    const bary2 = (t / 29.45) * Math.PI * 2;
+    const cx = W / 2 + panX + (Math.cos(bary) * 9 + Math.cos(bary2) * 4) * zoom * view.sx;
+    const cy = H / 2 + panY + (Math.sin(bary) * 9 + Math.sin(bary2) * 4) * zoom * view.sy;
+    const spin = t * (365 / 25) * Math.PI * 2;   // solar rotation, ~25 days
 
     if (showOrbits) {
       ctx.save();
-      ctx.translate(cx, cy); ctx.scale(1, tilt);
+      ctx.translate(cx, cy); ctx.scale(view.sx, view.sy);
       ctx.strokeStyle = 'rgba(130,165,235,.16)';
       ctx.lineWidth = 1;
       for (const p of planets) {
         ctx.beginPath(); ctx.arc(0, 0, p.dist * zoom, 0, Math.PI * 2); ctx.stroke();
       }
       ctx.restore();
+    }
+
+    // work out where each planet is, and record the helix it leaves behind
+    const drawn = planets.map(p => {
+      const a = (t / p.period) * Math.PI * 2;
+      const x = cx + Math.cos(a) * p.dist * zoom * view.sx;
+      const y = cy + Math.sin(a) * p.dist * zoom * view.sy;
+
+      if (showTrails) {
+        // existing trail points fall back as the system advances, which is
+        // what turns a closed orbit into an open corkscrew
+        for (const q of p.trail) q.x -= travel;
+        p.trail.push({ x, y });
+        while (p.trail.length > TRAIL_MAX || (p.trail.length && p.trail[0].x < -60)) {
+          p.trail.shift();
+        }
+      }
+      return { p, a, x, y, depth: view.depth(a) };
+    }).sort((u, v) => u.depth - v.depth);     // far side first
+
+    if (showTrails) {
+      ctx.lineWidth = 1.6;
+      for (const p of planets) {
+        const tr = p.trail;
+        const bright = shade(p.color, 1.25);
+        for (let i = 1; i < tr.length; i++) {
+          ctx.globalAlpha = 0.12 + (i / tr.length) * 0.62;
+          ctx.strokeStyle = bright;
+          ctx.beginPath();
+          ctx.moveTo(tr[i - 1].x, tr[i - 1].y);
+          ctx.lineTo(tr[i].x, tr[i].y);
+          ctx.stroke();
+        }
+      }
+      ctx.globalAlpha = 1;
     }
 
     // sun: corona + pulsing core
@@ -259,42 +312,32 @@
     ctx.beginPath(); ctx.arc(cx, cy, sunR * pulse, 0, Math.PI * 2); ctx.clip();
     for (const g of granules) {
       const a = g.a + spin;
-      const px = cx + Math.cos(a) * g.d * sunR;      // x wraps around the sphere
-      const py = cy + g.y * sunR;
-      const face = Math.cos(a);                      // <0 means it's on the far side
+      const face = Math.cos(a);                 // <= 0 means it's on the far side
       if (face <= 0) continue;
       ctx.globalAlpha = 0.30 * face;
       ctx.fillStyle = g.hot ? '#fff6c8' : '#e8760f';
       ctx.beginPath();
-      ctx.ellipse(px, py, g.r * sunR * face, g.r * sunR, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx + Math.cos(a) * g.d * sunR, cy + g.y * sunR,
+                  g.r * sunR * face, g.r * sunR, 0, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.globalAlpha = 1;
     ctx.restore();
 
-    // planets, sorted by depth so nearer ones draw on top
-    const drawn = planets.map(p => {
-      const a = (t / p.period) * Math.PI * 2;
-      return {
-        p,
-        x: cx + Math.cos(a) * p.dist * zoom,
-        y: cy + Math.sin(a) * p.dist * zoom * tilt
-      };
-    }).sort((u, v) => u.y - v.y);
-
+    // planets, far side already sorted to the back
     ctx.font = '11px ui-monospace, Menlo, Consolas, monospace';
     ctx.textAlign = 'center';
 
-    for (const { p, x, y } of drawn) {
+    for (const { p, a, x, y } of drawn) {
       const r = p.r * zoom;
-      if (p.ring) drawRing(x, y, r, 0.34);
+      if (p.ring) drawRing(x, y, r, view);
       sphere(x, y, r, p.color, cx, cy);
 
       if (p.moons) {
         for (const m of p.moons) {
           const ma = (t / m.period) * Math.PI * 2;
-          const mx = x + Math.cos(ma) * m.dist * zoom;
-          const my = y + Math.sin(ma) * m.dist * zoom * tilt;
+          const mx = x + Math.cos(ma) * m.dist * zoom * view.sx;
+          const my = y + Math.sin(ma) * m.dist * zoom * view.sy;
           sphere(mx, my, Math.max(0.8, m.r * zoom), m.color, x, y);
         }
       }
