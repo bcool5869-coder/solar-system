@@ -78,6 +78,7 @@ straight line for Neptune. The readout tracks how far the system has travelled.
 | Click a planet, its label, or the bottom bar | Fly to it and show its facts |
 | `0`–`8` | Jump to the Sun (0) or a planet (1–8) |
 | `Esc` / × | Back to the overview |
+| Real time | Jump to now and run the clock live, 1 s = 1 s |
 | Time slider | From minutes per second up to 20 years per second |
 | `Space` | Pause or play |
 | Orbits / Labels | Show or hide orbit lines and names |

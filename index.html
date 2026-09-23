@@ -235,6 +235,7 @@
       <input id="speed" type="range" min="0" max="100" value="54" aria-label="Time speed">
     </div>
     <div class="btns">
+      <button id="btnLive" class="wide" aria-pressed="false">Real time · 1 s = 1 s</button>
       <button id="btnPlay" aria-pressed="false">Pause</button>
       <button id="btnToday">Today</button>
       <button id="btnOrbits" aria-pressed="true">Orbits</button>
@@ -754,15 +755,18 @@ const barBtns = {};
 const speedEl = document.getElementById('speed');
 let simMs = Date.now();
 let paused = false, helix = false, showOrbits = true;
+let live = false;                     // real time: the sim clock follows the real clock
 let travelled = 0;                    // km, galactic mode
 const APEX = new THREE.Vector3(Math.cos(60 * DEG), Math.sin(60 * DEG), 0);   // 60° out of the orbital plane
 const UNITS_PER_DAY = 0.11;
 
 function daysPerSecond() {
+  if (live) return 1 / 86400;
   const s = +speedEl.value;
   return s === 0 ? 0 : 0.01 * Math.pow(10, s / 100 * 5);
 }
 function fmtRate(d) {
+  if (live) return '1 s = 1 s · live';
   if (d === 0) return 'stopped';
   if (d < 1 / 24) return `1 s = ${(d * 1440).toFixed(d * 1440 < 10 ? 1 : 0)} min`;
   if (d < 1) return `1 s = ${(d * 24).toFixed(d * 24 < 10 ? 1 : 0)} hours`;
@@ -773,12 +777,22 @@ function updateSpeedUi() {
   document.getElementById('speedTxt').textContent = paused ? 'paused' : fmtRate(daysPerSecond());
   speedEl.style.setProperty('--fill', speedEl.value + '%');
 }
-speedEl.addEventListener('input', updateSpeedUi);
+speedEl.addEventListener('input', () => { if (live) setLive(false); updateSpeedUi(); });
 updateSpeedUi();
 
 function setPressed(id, on) { document.getElementById(id).setAttribute('aria-pressed', String(on)); }
 document.getElementById('btnPlay').onclick = togglePause;
+function setLive(on) {
+  live = on; setPressed('btnLive', on);
+  if (on) {
+    simMs = Date.now(); clearTrails();
+    if (paused) { paused = false; const b = document.getElementById('btnPlay'); b.textContent = 'Pause'; setPressed('btnPlay', false); }
+  }
+  updateSpeedUi();
+}
+document.getElementById('btnLive').onclick = () => setLive(!live);
 function togglePause() {
+  if (live) setLive(false);
   paused = !paused;
   const b = document.getElementById('btnPlay'); b.textContent = paused ? 'Play' : 'Pause'; setPressed('btnPlay', paused);
   updateSpeedUi();
@@ -829,6 +843,7 @@ function openJyo(on) {
 document.getElementById('btnJyo').onclick = () => openJyo(jyoEl.hidden);
 document.getElementById('jyoClose').onclick = () => openJyo(false);
 function setTime(ms) {
+  if (live) setLive(false);
   simMs = ms; if (!paused) togglePause(); clearTrails();
   jyoTime.value = toLocalInput(simMs); updateJyo();
 }
@@ -962,13 +977,15 @@ const clock = new THREE.Clock();
 const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 const dateEl = document.getElementById('date'), subEl = document.getElementById('sub');
 const fmtDate = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
+const fmtClock = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
 let uiTick = 0;
 
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.05);
   const rate = paused ? 0 : daysPerSecond();
-  const dDays = rate * dt;
-  simMs += dDays * DAY_MS;
+  let dDays = rate * dt;
+  if (live) { const now = Date.now(); dDays = (now - simMs) / DAY_MS; simMs = now; }
+  else simMs += dDays * DAY_MS;
   const days = (simMs - J2000) / DAY_MS;
 
   // galactic travel
@@ -1085,11 +1102,13 @@ function frame() {
   }
 
   if (++uiTick % 10 === 0) {
-    dateEl.textContent = fmtDate.format(simMs);
+    // show the clock whenever time runs slowly enough to read it
+    dateEl.textContent = live || daysPerSecond() < 1 / 24 || paused ? fmtClock.format(simMs) : fmtDate.format(simMs);
     if (!jyoEl.hidden) updateJyo();
     if (focus && !document.getElementById('info').hidden) infoJyo(focus.id);
     subEl.innerHTML = helix
       ? `travelled <b>${travelled.toExponential(2)}</b> km round the galaxy`
+      : live ? '<b>live</b> · real time · planets at real positions'
       : `${simMs > Date.now() + DAY_MS ? 'future' : simMs < Date.now() - DAY_MS ? 'past' : 'today'} · planets at real positions`;
   }
 
