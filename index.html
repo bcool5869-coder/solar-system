@@ -2,426 +2,1122 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Solar System</title>
+<meta name="description" content="A realistic, interactive 3D solar system with real planet positions for any date.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syncopate:wght@400;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  html, body { height:100%; background:#04060f; overflow:hidden; }
-  canvas { display:block; }
-  #ui {
-    position:fixed; left:16px; top:16px; z-index:2;
-    font:13px/1.6 ui-monospace, Menlo, Consolas, monospace;
-    color:#9fb3d9; background:rgba(6,10,24,.62);
-    border:1px solid rgba(120,160,255,.18); border-radius:10px;
-    padding:12px 14px; backdrop-filter:blur(8px); max-width:274px;
+  :root {
+    color-scheme: dark;
+    --ink: #e9ecf2;
+    --dim: #8d96a8;
+    --faint: #5b6375;
+    --gold: #f3c77a;
+    --panel: rgba(8, 10, 16, .58);
+    --line: rgba(255, 255, 255, .09);
+    --display: "Syncopate", "Arial Black", sans-serif;
+    --body: "IBM Plex Sans", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
   }
-  #chev { font-size:11px; color:#7f93bb; letter-spacing:0; }
-  #panelBody { margin-top:8px; }
-  #ui.collapsed { padding:9px 14px; }
-  #ui.collapsed #panelBody { display:none; }
-  #ui label { display:flex; align-items:center; gap:8px; margin-top:6px; }
-  #ui input[type=range] { flex:1; accent-color:#6f9cff; }
-  #ui button {
-    margin-top:8px; width:100%; cursor:pointer; color:#cfe0ff;
-    background:rgba(90,130,255,.14); border:1px solid rgba(120,160,255,.28);
-    border-radius:7px; padding:6px 8px; font:inherit;
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; background: #000; overflow: hidden; color: var(--ink); font-family: var(--body); }
+  canvas#scene { position: fixed; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  button:focus-visible, input:focus-visible { outline: 1px solid var(--gold); outline-offset: 3px; }
+
+  /* ---------- loader ---------- */
+  #loader {
+    position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; background: #000;
+    transition: opacity 1.2s ease;
   }
-  #ui button:hover { background:rgba(90,130,255,.26); }
-  /* the panel header is a button too, but shouldn't look like an action */
-  #ui #panelToggle {
-    display:flex; align-items:center; justify-content:space-between; gap:14px;
-    margin:0; padding:0; background:none; border:0;
-    font-size:14px; letter-spacing:.12em; text-transform:uppercase; color:#e8eeff;
+  #loader.done { opacity: 0; pointer-events: none; }
+  #loader .inner { display: grid; gap: 18px; justify-items: center; }
+  #loader h1 { font: 700 clamp(28px, 6vw, 54px) var(--display); letter-spacing: .5em; margin-right: -.5em; }
+  #loader .bar { width: min(260px, 60vw); height: 1px; background: var(--line); }
+  #loader .bar i { display: block; height: 100%; width: 0; background: var(--gold); transition: width .3s; }
+  #loader p { font: 11px var(--mono); letter-spacing: .2em; color: var(--dim); text-transform: uppercase; }
+
+  /* ---------- HUD ---------- */
+  .hud { position: fixed; z-index: 5; transition: opacity .4s; }
+  body.ui-hidden .hud { opacity: 0; pointer-events: none; }
+
+  #brand { top: calc(22px + env(safe-area-inset-top, 0px)); left: 24px; }
+  #brand h1 { font: 700 20px var(--display); letter-spacing: .42em; }
+  #brand .date { margin-top: 10px; font: 500 13px var(--mono); color: var(--ink); letter-spacing: .06em; }
+  #brand .sub { margin-top: 3px; font: 11px var(--mono); color: var(--dim); letter-spacing: .06em; }
+  #brand .sub b { color: var(--gold); font-weight: 500; }
+
+  #controls {
+    top: calc(18px + env(safe-area-inset-top, 0px)); right: 18px; width: 262px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
   }
-  #ui #panelToggle:hover { background:none; color:#fff; }
-  #ui #panelToggle:hover #chev { color:#cfe0ff; }
-  #clock { margin-top:9px; font-size:11px; color:#7f93bb; }
-  #clock b { color:#c9d8f5; font-weight:600; }
-  #hint { margin-top:9px; font-size:11px; color:#61759c; }
+  #controls .head {
+    width: 100%; display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 14px; font: 500 11px var(--mono); letter-spacing: .18em; text-transform: uppercase; color: var(--dim);
+  }
+  #controls .head:hover { color: var(--ink); }
+  #controls .body { padding: 2px 14px 14px; display: grid; gap: 12px; }
+  #controls.collapsed .body { display: none; }
+  .speed-row { display: grid; gap: 7px; }
+  .speed-row .top { display: flex; justify-content: space-between; align-items: baseline; font: 11px var(--mono); color: var(--dim); }
+  .speed-row .top b { color: var(--ink); font-weight: 500; font-variant-numeric: tabular-nums; }
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 18px; background: transparent; cursor: pointer; }
+  input[type=range]::-webkit-slider-runnable-track { height: 2px; background: linear-gradient(90deg, var(--gold) var(--fill, 50%), rgba(255,255,255,.14) var(--fill, 50%)); }
+  input[type=range]::-moz-range-track { height: 2px; background: rgba(255,255,255,.14); }
+  input[type=range]::-moz-range-progress { height: 2px; background: var(--gold); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-top: -5px; border-radius: 50%; background: var(--ink); border: 0; }
+  input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: var(--ink); border: 0; }
+  .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .btns button {
+    padding: 8px 6px; border: 1px solid var(--line); border-radius: 4px; font: 11px var(--mono); letter-spacing: .06em; color: var(--dim);
+    transition: color .2s, border-color .2s, background .2s;
+  }
+  .btns button:hover { color: var(--ink); border-color: rgba(255,255,255,.22); }
+  .btns button[aria-pressed="true"] { color: var(--ink); border-color: rgba(243,199,122,.55); background: rgba(243,199,122,.08); }
+  .btns .wide { grid-column: 1 / -1; }
+  .note { font-size: 12px; line-height: 1.5; color: var(--dim); }
+  .note[hidden] { display: none; }
+
+  /* ---------- planet bar ---------- */
+  #bar {
+    left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+    display: flex; gap: 4px; padding: 8px; max-width: calc(100vw - 32px); overflow-x: auto; scrollbar-width: none;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  }
+  #bar::-webkit-scrollbar { display: none; }
+  #bar button { display: grid; justify-items: center; gap: 7px; padding: 8px 10px 6px; border-radius: 4px; min-width: 64px; transition: background .2s; }
+  #bar button:hover { background: rgba(255,255,255,.05); }
+  #bar button[aria-current="true"] { background: rgba(243,199,122,.1); }
+  #bar .orb { width: 28px; height: 28px; border-radius: 50%; background-size: 200% 100%; background-position: 30% 50%;
+    box-shadow: inset -7px -4px 10px rgba(0,0,0,.85), inset 2px 1px 4px rgba(255,255,255,.15); }
+  #bar .orb.sun { box-shadow: 0 0 14px rgba(255,170,60,.7), inset -3px -2px 6px rgba(120,40,0,.5); }
+  #bar span { font: 10px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
+  #bar button[aria-current="true"] span { color: var(--gold); }
+
+  /* ---------- info card ---------- */
+  #info {
+    right: 18px; bottom: calc(112px + env(safe-area-inset-bottom, 0px)); width: 300px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 18px 18px 16px;
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    transition: opacity .35s, transform .35s;
+  }
+  #info[hidden] { display: block !important; opacity: 0; transform: translateY(10px); pointer-events: none; }
+  #info .kind { font: 11px var(--mono); letter-spacing: .18em; text-transform: uppercase; color: var(--gold); }
+  #info h2 { margin-top: 6px; font: 700 26px var(--display); letter-spacing: .12em; }
+  #info .fact { margin-top: 10px; font-size: 13px; line-height: 1.55; color: #c3c9d6; }
+  #info dl { margin-top: 14px; display: grid; grid-template-columns: auto 1fr; border-top: 1px solid var(--line); }
+  #info dt, #info dd { padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+  #info dt { color: var(--dim); font-family: var(--mono); letter-spacing: .04em; }
+  #info dd { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  #info .close { position: absolute; top: 12px; right: 12px; width: 28px; height: 28px; color: var(--dim); font-size: 18px; line-height: 1; }
+  #info .close:hover { color: var(--ink); }
+
+  /* ---------- jyotish ---------- */
+  #jyo {
+    left: 18px; top: calc(118px + env(safe-area-inset-top, 0px)); width: 520px; max-height: calc(100vh - 250px); overflow: auto;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 16px 18px 14px;
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  }
+  #jyo[hidden] { display: none; }
+  #jyo .top { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+  #jyo .kind { font: 11px var(--mono); letter-spacing: .18em; text-transform: uppercase; color: var(--gold); }
+  #jyo h3 { margin-top: 5px; font: 700 17px var(--display); letter-spacing: .14em; }
+  #jyo .close { width: 28px; height: 28px; margin: -6px -8px 0 0; color: var(--dim); font-size: 18px; }
+  #jyo .close:hover { color: var(--ink); }
+  #jyo .when { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  #jyo input[type=datetime-local] {
+    flex: 1 1 190px; min-width: 0; padding: 7px 9px; border: 1px solid var(--line); border-radius: 4px;
+    background: rgba(255,255,255,.03); color: var(--ink); font: 12px var(--mono);
+  }
+  #jyo .when button { padding: 7px 12px; border: 1px solid var(--line); border-radius: 4px; font: 11px var(--mono); letter-spacing: .06em; color: var(--dim); }
+  #jyo .when button:hover { color: var(--ink); border-color: rgba(255,255,255,.22); }
+  #jyo .meta { margin-top: 10px; font: 11px var(--mono); color: var(--dim); letter-spacing: .03em; }
+  #jyo .meta b { color: var(--ink); font-weight: 500; }
+  #jyo table { width: 100%; margin-top: 12px; border-collapse: collapse; font: 12px var(--mono); font-variant-numeric: tabular-nums; }
+  #jyo th { text-align: left; font-weight: 400; font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); padding: 0 6px 7px 0; border-bottom: 1px solid var(--line); }
+  #jyo td { padding: 7px 6px 7px 0; border-bottom: 1px solid var(--line); white-space: nowrap; vertical-align: top; }
+  #jyo td small { display: block; margin-top: 1px; font-size: 10px; color: var(--faint); }
+  #jyo td.g { color: var(--ink); font-family: var(--body); font-weight: 500; font-size: 13px; }
+  #jyo .foot .r-key, #jyo td .r { margin-left: 5px; padding: 0 4px; border-radius: 3px; font-size: 9px; color: #1a1206; background: var(--gold); vertical-align: 1px; }
+  #jyo td.num { text-align: right; }
+  #jyo tr.outer td { color: var(--dim); }
+  #jyo tr.outer td.g { color: var(--dim); }
+  #jyo tr[data-id] { cursor: pointer; }
+  #jyo tr[data-id]:hover td { background: rgba(255,255,255,.03); }
+  #jyo .pm { display: none; color: var(--gold); }
+  #jyo .foot { margin-top: 10px; font-size: 11px; line-height: 1.5; color: var(--faint); }
+  #info dl.jy { margin-top: 0; border-top: 0; }
+  #info dl.jy dd { color: var(--gold); }
+  #labels button.graha { color: var(--gold); font-size: 11px; letter-spacing: .08em; text-transform: none; padding: 2px 4px; }
+  #labels button.graha::before { display: none; }
+  body.no-zodiac #labels button.graha { display: none !important; }
+  #labels button.sky-lbl { display: grid; justify-items: center; gap: 3px; padding: 6px 10px; text-transform: none; letter-spacing: 0; transition: opacity .3s; }
+  #labels button.sky-lbl::before { display: none; }
+  .sky-lbl b { font: 700 18px var(--display); letter-spacing: .22em; color: #ece8ff; text-shadow: 0 0 14px rgba(150,120,255,.9), 0 0 3px rgba(0,0,0,.8); }
+  .sky-lbl.nakshatra b { font: 600 15px var(--body); letter-spacing: .08em; }
+  .sky-lbl span { font: 10px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: rgba(200,210,255,.62); }
+  .sky-lbl em { font: 500 11px var(--mono); font-style: normal; color: var(--gold); text-shadow: 0 0 8px rgba(0,0,0,.9); }
+  .sky-lbl.hot b { color: var(--gold); text-shadow: 0 0 16px rgba(243,199,122,.8), 0 0 3px rgba(0,0,0,.8); }
+  #skyPick { margin-top: 14px; }
+  #skyPick[hidden] { display: none; }
+  #skyPick .cap { font: 10px var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--dim); }
+  #skyPick .seg { margin-top: 7px; display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+  #skyPick .seg button { padding: 8px 4px; font: 11px var(--mono); letter-spacing: .06em; color: var(--dim); border-left: 1px solid var(--line); transition: color .2s, background .2s; }
+  #skyPick .seg button:first-child { border-left: 0; }
+  #skyPick .seg button:hover { color: var(--ink); }
+  #skyPick .seg button[aria-pressed="true"] { color: #1a1206; background: var(--gold); }
+
+  /* ---------- labels ---------- */
+  #labels { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  #labels button {
+    position: absolute; left: 0; top: 0; pointer-events: auto; padding: 4px 6px;
+    font: 10px var(--mono); letter-spacing: .16em; text-transform: uppercase; color: rgba(233,236,242,.72);
+    white-space: nowrap; will-change: transform; transition: color .2s;
+  }
+  #labels button:hover, #labels button.on { color: var(--gold); }
+  #labels button::before { content: ""; display: inline-block; width: 4px; height: 4px; margin-right: 7px; border-radius: 50%; background: currentColor; vertical-align: 2px; }
+  body.no-labels #labels { display: none; }
+
+  #hint { left: 24px; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); font: 11px var(--mono); color: var(--faint); line-height: 1.7; }
+  #hint a { color: var(--faint); }
+  #hint a:hover { color: var(--dim); }
+
+  @media (max-width: 1180px) { #hint { display: none; } }
+  @media (max-width: 760px) {
+    #brand { left: 16px; }
+    #brand h1 { font-size: 16px; }
+    #controls { right: 12px; width: min(240px, calc(100vw - 24px)); }
+    #hint { display: none; }
+    #info { left: 12px; right: 12px; width: auto; bottom: calc(104px + env(safe-area-inset-bottom, 0px)); padding: 14px; }
+    #info .fact { display: none; }
+    #info dl { grid-template-columns: repeat(2, auto 1fr); column-gap: 12px; }
+    #bar button { min-width: 54px; padding: 6px 6px 4px; }
+    #jyo { left: 12px; right: 12px; width: auto; top: calc(84px + env(safe-area-inset-top, 0px)); max-height: calc(100vh - 210px); padding: 14px; }
+    #jyo .lon, #jyo .pada { display: none; }
+    #jyo .pm { display: inline; }
+    #jyo table { font-size: 11px; }
+    #jyo td { padding-right: 4px; }
+  }
+  @media (max-width: 760px) and (max-height: 700px) { #info dl { display: none; } }
 </style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+} }
+</script>
 </head>
 <body>
-<canvas id="sky"></canvas>
+<canvas id="scene"></canvas>
+<div id="labels"></div>
 
-<div id="ui">
-  <button id="panelToggle" aria-expanded="true" aria-controls="panelBody">
-    <span>Solar System</span><span id="chev">hide</span>
-  </button>
-  <div id="panelBody">
-    <label>Speed <input id="speed" type="range" min="0" max="400" value="100"></label>
-    <label>Zoom <input id="zoom" type="range" min="40" max="220" value="100"></label>
-    <button id="toggleView">View: helical (60&deg; tilt)</button>
-    <button id="toggleOrbits">Orbit paths: on</button>
-    <button id="toggleTrails">Helix trails: on</button>
-    <div id="clock"></div>
-    <div id="hint">Drag to pan &middot; scroll to zoom &middot; H to hide</div>
+<div id="loader"><div class="inner">
+  <h1>SOL</h1>
+  <div class="bar"><i id="loadbar"></i></div>
+  <p id="loadtxt">Loading planets</p>
+</div></div>
+
+<div id="brand" class="hud">
+  <h1>SOL</h1>
+  <div class="date" id="date">—</div>
+  <div class="sub" id="sub">—</div>
+</div>
+
+<div id="controls" class="hud">
+  <button class="head" id="ctlToggle" aria-expanded="true" aria-controls="ctlBody"><span>Controls</span><span id="ctlChev">hide</span></button>
+  <div class="body" id="ctlBody">
+    <div class="speed-row">
+      <div class="top"><span>Time</span><b id="speedTxt">1 s = 5 days</b></div>
+      <input id="speed" type="range" min="0" max="100" value="54" aria-label="Time speed">
+    </div>
+    <div class="btns">
+      <button id="btnPlay" aria-pressed="false">Pause</button>
+      <button id="btnToday">Today</button>
+      <button id="btnOrbits" aria-pressed="true">Orbits</button>
+      <button id="btnLabels" aria-pressed="true">Labels</button>
+      <button id="btnJyo" aria-pressed="false">Jyotish</button>
+      <button id="btnZodiac" aria-pressed="false">Zodiac ring</button>
+      <button id="btnHelix" class="wide" aria-pressed="false">Galactic motion</button>
+    </div>
+    <p class="note" id="helixNote" hidden>The Sun drags every planet round the Milky Way at ~230 km/s, heading about 60° out of the orbital plane. Planets trace corkscrews, not circles. Neptune's is nearly a straight line.</p>
   </div>
 </div>
 
-<script>
-(() => {
-  const canvas = document.getElementById('sky');
-  const ctx = canvas.getContext('2d');
+<aside id="info" class="hud" hidden aria-live="polite">
+  <button class="close" id="infoClose" aria-label="Back to overview">×</button>
+  <div class="kind" id="infoKind"></div>
+  <h2 id="infoName"></h2>
+  <p class="fact" id="infoFact"></p>
+  <div id="skyPick" hidden>
+    <div class="cap">Show in the sky</div>
+    <div class="seg" role="group" aria-label="Show in the sky">
+      <button data-mode="rashi">Rashi</button><button data-mode="nakshatra">Nakshatra</button><button data-mode="off">Off</button>
+    </div>
+  </div>
+  <dl id="infoStats"></dl>
+  <dl id="infoJyo" class="jy"></dl>
+</aside>
 
-  let W = 0, H = 0, DPR = 1;
-  function resize() {
-    DPR = Math.min(window.devicePixelRatio || 1, 2);
-    W = window.innerWidth; H = window.innerHeight;
-    canvas.width = W * DPR; canvas.height = H * DPR;
-    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
-    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    buildStars();
+<aside id="jyo" class="hud" hidden aria-labelledby="jyoTitle">
+  <div class="top">
+    <div><div class="kind">Jyotish · sidereal</div><h3 id="jyoTitle">Graha positions</h3></div>
+    <button class="close" id="jyoClose" aria-label="Close Jyotish panel">×</button>
+  </div>
+  <div class="when">
+    <input id="jyoTime" type="datetime-local" step="60" aria-label="Date and time">
+    <button id="jyoNow">Now</button>
+  </div>
+  <div class="meta" id="jyoMeta"></div>
+  <table>
+    <thead><tr><th>Graha</th><th>Rashi</th><th class="num">Degree</th><th>Nakshatra</th><th class="num pada">Pada</th><th class="num lon">Longitude</th></tr></thead>
+    <tbody id="jyoBody"></tbody>
+  </table>
+  <p class="foot">Geocentric, Lahiri ayanamsa, mean Rahu/Ketu. <span class="r-key">R</span> = retrograde. Calculated from NASA JPL orbital elements; accurate to a few arc-minutes for 1800–2050. Degree is within the rashi; longitude is 0–360° from Mesha 0°.</p>
+</aside>
+
+<nav id="bar" class="hud" aria-label="Planets"></nav>
+
+<div id="hint" class="hud">
+  Drag to orbit · scroll to zoom · 0–8 jump · space pause · J jyotish · Z zodiac · S sky · H hide<br>
+  Textures: <a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noopener">Solar System Scope</a> (CC BY 4.0)
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { createSky } from './sky.js';
+import { helio, geoLongitude, precession, ayanamsa, jyotish, dms, RASHIS, NAKSHATRAS, GRAHAS } from './astro.js';
+
+const TEX = 'textures/';
+const DEG = Math.PI / 180;
+const J2000 = Date.UTC(2000, 0, 1, 12);
+const DAY_MS = 86400000;
+
+// ---------------------------------------------------------------- data
+// Sizes and distances are compressed so everything fits on screen; periods,
+// tilts, spin, inclinations and J2000 mean longitudes are real.
+const BODIES = [
+  { id: 'mercury', name: 'Mercury', kind: 'Terrestrial planet', tex: '2k_mercury.jpg', r: 0.8, dist: 22, period: 87.97, L0: 252.25, incl: 7.0, tilt: 0.03, dayH: 1407.6,
+    fact: 'A single sunrise-to-sunrise day lasts 176 Earth days, longer than its 88-day year.',
+    stats: [['Diameter', '4,879 km'], ['From Sun', '0.39 AU'], ['Day', '58.6 days'], ['Year', '88 days'], ['Moons', '0'], ['Mean temp', '167 °C']] },
+  { id: 'venus', name: 'Venus', kind: 'Terrestrial planet', tex: '2k_venus_atmosphere.jpg', r: 1.9, dist: 32, period: 224.70, L0: 181.98, incl: 3.39, tilt: 177.4, dayH: -5832.5,
+    atmo: [1.0, 0.85, 0.55], atmoK: 1.2,
+    fact: 'The hottest planet. Its thick carbon dioxide air traps enough heat to melt lead.',
+    stats: [['Diameter', '12,104 km'], ['From Sun', '0.72 AU'], ['Day', '243 days (retrograde)'], ['Year', '225 days'], ['Moons', '0'], ['Mean temp', '464 °C']] },
+  { id: 'earth', name: 'Earth', kind: 'Terrestrial planet', tex: '2k_earth_daymap.jpg', r: 2.0, dist: 44, period: 365.256, L0: 100.46, incl: 0, tilt: 23.44, dayH: 23.93,
+    earth: true, atmo: [0.35, 0.6, 1.0], atmoK: 1.6,
+    moons: [{ name: 'Moon', r: 0.55, dist: 4.6, period: 27.32, tint: 0xffffff, eq: false }],
+    fact: 'The only world known to host life, with liquid water covering 71% of its surface.',
+    stats: [['Diameter', '12,742 km'], ['From Sun', '1.00 AU'], ['Day', '23.9 hours'], ['Year', '365.25 days'], ['Moons', '1'], ['Mean temp', '15 °C']] },
+  { id: 'mars', name: 'Mars', kind: 'Terrestrial planet', tex: '2k_mars.jpg', r: 1.1, dist: 58, period: 686.98, L0: 355.45, incl: 1.85, tilt: 25.19, dayH: 24.62,
+    atmo: [1.0, 0.55, 0.35], atmoK: 0.6,
+    moons: [{ name: 'Phobos', r: 0.14, dist: 1.9, period: 0.319, tint: 0x9a8b80, eq: true },
+            { name: 'Deimos', r: 0.1, dist: 2.8, period: 1.263, tint: 0xb0a090, eq: true }],
+    fact: 'Home to Olympus Mons, a volcano nearly three times the height of Everest.',
+    stats: [['Diameter', '6,779 km'], ['From Sun', '1.52 AU'], ['Day', '24.6 hours'], ['Year', '687 days'], ['Moons', '2'], ['Mean temp', '−65 °C']] },
+  { id: 'jupiter', name: 'Jupiter', kind: 'Gas giant', tex: '2k_jupiter.jpg', r: 6.5, dist: 92, period: 4332.59, L0: 34.40, incl: 1.30, tilt: 3.13, dayH: 9.93,
+    atmo: [1.0, 0.9, 0.75], atmoK: 0.5,
+    moons: [{ name: 'Io', r: 0.42, dist: 9.5, period: 1.769, tint: 0xf2dc7a, eq: true },
+            { name: 'Europa', r: 0.36, dist: 11.8, period: 3.551, tint: 0xe8dcc8, eq: true },
+            { name: 'Ganymede', r: 0.6, dist: 14.8, period: 7.155, tint: 0xb7a58c, eq: true },
+            { name: 'Callisto', r: 0.55, dist: 18.2, period: 16.689, tint: 0x8a7c6c, eq: true }],
+    fact: 'The Great Red Spot is a storm wider than Earth that has raged for centuries.',
+    stats: [['Diameter', '139,820 km'], ['From Sun', '5.20 AU'], ['Day', '9.9 hours'], ['Year', '11.86 years'], ['Moons', '95+'], ['Mean temp', '−110 °C']] },
+  { id: 'saturn', name: 'Saturn', kind: 'Gas giant', tex: '2k_saturn.jpg', r: 5.5, dist: 128, period: 10759.22, L0: 49.94, incl: 2.49, tilt: 26.73, dayH: 10.66,
+    ring: { inner: 1.24, outer: 2.27, tex: '2k_saturn_ring_alpha.png' }, atmo: [1.0, 0.9, 0.7], atmoK: 0.4,
+    moons: [{ name: 'Titan', r: 0.58, dist: 15.5, period: 15.945, tint: 0xe0a860, eq: true }],
+    fact: 'Its rings stretch 280,000 km across yet are often only about 10 metres thick.',
+    stats: [['Diameter', '116,460 km'], ['From Sun', '9.58 AU'], ['Day', '10.7 hours'], ['Year', '29.46 years'], ['Moons', '274'], ['Mean temp', '−140 °C']] },
+  { id: 'uranus', name: 'Uranus', kind: 'Ice giant', tex: '2k_uranus.jpg', r: 3.2, dist: 164, period: 30688.5, L0: 313.23, incl: 0.77, tilt: 97.77, dayH: -17.24,
+    ring: { inner: 1.6, outer: 2.0, thin: true }, atmo: [0.55, 0.9, 1.0], atmoK: 0.9,
+    fact: 'Tipped over by 98°, it rolls around the Sun on its side.',
+    stats: [['Diameter', '50,724 km'], ['From Sun', '19.2 AU'], ['Day', '17.2 hours (retrograde)'], ['Year', '84 years'], ['Moons', '28'], ['Mean temp', '−195 °C']] },
+  { id: 'neptune', name: 'Neptune', kind: 'Ice giant', tex: '2k_neptune.jpg', r: 3.1, dist: 196, period: 60182, L0: 304.88, incl: 1.77, tilt: 28.32, dayH: 16.11,
+    atmo: [0.35, 0.5, 1.0], atmoK: 1.0,
+    moons: [{ name: 'Triton', r: 0.36, dist: 6.2, period: -5.877, tint: 0xd8cfc8, eq: true }],
+    fact: 'Winds here reach 2,100 km/h, the fastest measured anywhere in the solar system.',
+    stats: [['Diameter', '49,244 km'], ['From Sun', '30.1 AU'], ['Day', '16.1 hours'], ['Year', '164.8 years'], ['Moons', '16'], ['Mean temp', '−200 °C']] },
+];
+const SUN = { id: 'sun', name: 'Sun', kind: 'G-type star', r: 10,
+  fact: 'Holds 99.86% of all the mass in the solar system. Its light takes 8 minutes to reach Earth.',
+  stats: [['Diameter', '1,392,700 km'], ['Rotation', '~25 days'], ['Age', '4.6 billion years'], ['Surface', '5,500 °C'], ['Core', '15 million °C']] };
+
+// ---------------------------------------------------------------- renderer
+const canvas = document.getElementById('scene');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, 1, 0.05, 20000);
+camera.position.set(0, 700, 1400);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.minDistance = 14;
+controls.maxDistance = 1600;
+controls.zoomSpeed = 0.8;
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.7, 0.5, 0.95);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+const manager = new THREE.LoadingManager();
+const loader = new THREE.TextureLoader(manager);
+const texCache = {};
+function tex(file, srgb = true) {
+  if (texCache[file]) return texCache[file];
+  const t = loader.load(TEX + file);
+  if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return (texCache[file] = t);
+}
+
+// ---------------------------------------------------------------- lights & sky
+const sunLight = new THREE.PointLight(0xfff4e6, 2.6, 0, 0);
+scene.add(new THREE.AmbientLight(0x8090b0, 0.035));
+
+const sky = new THREE.Mesh(
+  new THREE.SphereGeometry(9000, 64, 32),
+  new THREE.MeshBasicMaterial({ map: tex('8k_stars_milky_way.jpg'), side: THREE.BackSide, color: 0x6a6a72, depthWrite: false })
+);
+sky.rotation.set(63 * DEG, 0, 0); // galactic plane tilted ~60° to the ecliptic
+scene.add(sky);
+
+// crisp foreground stars on top of the painted sky
+{
+  const n = 2600, pos = new Float32Array(n * 3), col = new Float32Array(n * 3);
+  const rnd = mulberry(7);
+  for (let i = 0; i < n; i++) {
+    const u = rnd() * 2 - 1, th = rnd() * Math.PI * 2, s = Math.sqrt(1 - u * u), R = 8000;
+    pos.set([Math.cos(th) * s * R, u * R, Math.sin(th) * s * R], i * 3);
+    const t = rnd(), b = 0.5 + rnd() * 0.5;
+    col.set(t < .15 ? [b, b * .8, b * .6] : t < .3 ? [b * .75, b * .85, b] : [b, b, b], i * 3);
   }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  scene.add(new THREE.Points(g, new THREE.PointsMaterial({ size: 1.6, sizeAttenuation: false, vertexColors: true, depthWrite: false })));
+}
 
-  // ---- starfield -------------------------------------------------------
-  let stars = [];
-  function buildStars() {
-    const n = Math.round((W * H) / 2600);
-    stars = Array.from({ length: n }, () => ({
-      x: Math.random() * W,
-      y: Math.random() * H,
-      r: Math.random() * 1.1 + 0.25,
-      a: Math.random() * 0.6 + 0.25,
-      tw: Math.random() * Math.PI * 2,
-      ts: Math.random() * 1.8 + 0.4
-    }));
+// everything that travels with the Sun lives in here
+const system = new THREE.Group();
+scene.add(system);
+system.add(sunLight);
+
+// ---------------------------------------------------------------- shaders
+const NOISE = `
+float hash(vec3 p){ p = fract(p*0.3183099 + .1); p *= 17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
+float noise(vec3 x){ vec3 i = floor(x); vec3 f = fract(x); f = f*f*(3.-2.*f);
+  return mix(mix(mix(hash(i),hash(i+vec3(1,0,0)),f.x), mix(hash(i+vec3(0,1,0)),hash(i+vec3(1,1,0)),f.x),f.y),
+             mix(mix(hash(i+vec3(0,0,1)),hash(i+vec3(1,0,1)),f.x), mix(hash(i+vec3(0,1,1)),hash(i+vec3(1,1,1)),f.x),f.y),f.z); }
+float fbm(vec3 p){ float v = 0., a = .5; for (int i = 0; i < 5; i++){ v += a*noise(p); p *= 2.03; a *= .5; } return v; }`;
+
+const WORLD_VERT = `
+varying vec2 vUv; varying vec3 vN; varying vec3 vW; varying vec3 vP;
+void main(){ vUv = uv; vP = position; vN = normalize(mat3(modelMatrix) * normal);
+  vec4 w = modelMatrix * vec4(position, 1.); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`;
+
+// ---------------------------------------------------------------- sun
+const sunMat = new THREE.ShaderMaterial({
+  uniforms: { map: { value: tex('2k_sun.jpg') }, time: { value: 0 } },
+  vertexShader: WORLD_VERT,
+  fragmentShader: `
+    uniform sampler2D map; uniform float time;
+    varying vec2 vUv; varying vec3 vN; varying vec3 vW; varying vec3 vP;
+    ${NOISE}
+    void main(){
+      vec3 p = normalize(vP) * 3.0;
+      float n = fbm(p + vec3(time*.05, time*.03, -time*.04));
+      float cells = fbm(p*6. + n*2. + time*.12);
+      vec2 uv = vUv + (vec2(n, cells) - .5) * .012;
+      vec3 c = texture2D(map, uv).rgb;
+      c *= .75 + cells * .9;
+      float mu = clamp(dot(normalize(cameraPosition - vW), vN), 0., 1.);
+      c *= mix(.45, 1., pow(mu, .45));                       // limb darkening
+      c = mix(c, vec3(1., .55, .15), .25) * 2.6;             // push into HDR so it blooms
+      gl_FragColor = vec4(c, 1.);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
+    }`,
+});
+const sunMesh = new THREE.Mesh(new THREE.SphereGeometry(SUN.r, 96, 64), sunMat);
+sunMesh.userData.body = SUN;
+system.add(sunMesh);
+
+function glowTexture(stops) {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d'), grad = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+  stops.forEach(([o, col]) => grad.addColorStop(o, col));
+  g.fillStyle = grad; g.fillRect(0, 0, 256, 256);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const corona = new THREE.Sprite(new THREE.SpriteMaterial({
+  map: glowTexture([[0, 'rgba(255,236,190,1)'], [.18, 'rgba(255,190,90,.8)'], [.4, 'rgba(255,120,30,.22)'], [1, 'rgba(255,90,10,0)']]),
+  blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+corona.scale.setScalar(SUN.r * 4.6);
+const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+  map: glowTexture([[0, 'rgba(255,200,130,.22)'], [.35, 'rgba(255,140,60,.05)'], [1, 'rgba(255,120,40,0)']]),
+  blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+halo.scale.setScalar(SUN.r * 13);
+system.add(corona, halo);
+
+// ---------------------------------------------------------------- planets
+function atmosphere(radius, color, k) {
+  return new THREE.Mesh(new THREE.SphereGeometry(radius, 64, 48), new THREE.ShaderMaterial({
+    uniforms: { color: { value: new THREE.Color(...color) }, sunPos: { value: new THREE.Vector3() }, k: { value: k } },
+    vertexShader: WORLD_VERT,
+    fragmentShader: `
+      uniform vec3 color; uniform vec3 sunPos; uniform float k;
+      varying vec3 vN; varying vec3 vW; varying vec2 vUv; varying vec3 vP;
+      void main(){
+        vec3 V = normalize(cameraPosition - vW), L = normalize(sunPos - vW);
+        float rim = pow(1. - max(dot(V, vN), 0.), 3.);
+        float lit = smoothstep(-.35, .45, dot(vN, L));
+        float a = rim * lit * k;
+        gl_FragColor = vec4(color * a, a);
+      }`,
+    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+  }));
+}
+
+function earthMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: { day: { value: tex('2k_earth_daymap.jpg') }, night: { value: tex('2k_earth_nightmap.jpg') }, sunPos: { value: new THREE.Vector3() } },
+    vertexShader: WORLD_VERT,
+    fragmentShader: `
+      uniform sampler2D day, night; uniform vec3 sunPos;
+      varying vec2 vUv; varying vec3 vN; varying vec3 vW; varying vec3 vP;
+      void main(){
+        vec3 L = normalize(sunPos - vW), V = normalize(cameraPosition - vW);
+        float d = dot(vN, L);
+        vec3 dc = texture2D(day, vUv).rgb, nc = texture2D(night, vUv).rgb;
+        float ocean = smoothstep(.02, .12, dc.b - dc.r);
+        float spec = pow(max(dot(reflect(-L, vN), V), 0.), 40.) * ocean * .9;
+        vec3 lit = dc * max(d, 0.) * 1.8 + vec3(1., .95, .85) * spec * max(d, 0.);
+        vec3 dark = nc * vec3(1., .78, .5) * 2.2 * (1. - smoothstep(-.18, .12, d));
+        vec3 twilight = vec3(1., .45, .2) * .12 * exp(-pow(d * 7., 2.));  // warm terminator
+        gl_FragColor = vec4(lit + dark + twilight * dc, 1.);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+  });
+}
+
+function ringMesh(r, ring) {
+  const inner = r * ring.inner, outer = r * ring.outer;
+  const geo = new THREE.RingGeometry(inner, outer, 180, 1);
+  const pos = geo.attributes.position, uv = geo.attributes.uv, v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) { v.fromBufferAttribute(pos, i); uv.setXY(i, (v.length() - inner) / (outer - inner), .5); }
+  let map;
+  if (ring.tex) map = tex(ring.tex);
+  else {   // Uranus: a few thin dark bands
+    const c = document.createElement('canvas'); c.width = 512; c.height = 4;
+    const g = c.getContext('2d');
+    [[.08, .5], [.3, .35], [.52, .4], [.7, .3], [.93, .9]].forEach(([x, a]) => { g.fillStyle = `rgba(190,215,230,${a})`; g.fillRect(x * 512, 0, x > .9 ? 8 : 3, 4); });
+    map = new THREE.CanvasTexture(c); map.colorSpace = THREE.SRGBColorSpace;
   }
+  const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map, transparent: true, side: THREE.DoubleSide, roughness: 1, metalness: 0, depthWrite: false, opacity: ring.thin ? .7 : 1 }));
+  m.rotation.x = -Math.PI / 2;
+  return m;
+}
 
-  // ---- bodies ----------------------------------------------------------
-  // dist = orbit radius in px, r = draw radius, period = orbital period in years
-  const planets = [
-    { name:'Mercury', dist: 58,  r: 3.0,  period: 0.24,  color:'#a9a2a0', ring:false },
-    { name:'Venus',   dist: 82,  r: 5.4,  period: 0.62,  color:'#e0b072', ring:false },
-    { name:'Earth',   dist: 112, r: 5.8,  period: 1.00,  color:'#4b8fe0', ring:false,
-      moons:[{ dist: 13, r: 1.7, period: 0.075, color:'#c9c9c9' }] },
-    { name:'Mars',    dist: 146, r: 4.2,  period: 1.88,  color:'#c1502e', ring:false,
-      moons:[{ dist: 9,  r: 1.0, period: 0.03,  color:'#9a8b80' }] },
-    { name:'Jupiter', dist: 212, r: 15,   period: 11.86, color:'#d3a06a', ring:false,
-      moons:[{ dist: 23, r: 1.6, period: 0.05,  color:'#d9d2c4' },
-             { dist: 31, r: 1.9, period: 0.09,  color:'#b7a58c' }] },
-    { name:'Saturn',  dist: 282, r: 12.5, period: 29.45, color:'#e3cb92', ring:true,
-      moons:[{ dist: 26, r: 1.7, period: 0.07,  color:'#cdbfa5' }] },
-    { name:'Uranus',  dist: 348, r: 8.5,  period: 84.0,  color:'#8fd4dd', ring:true },
-    { name:'Neptune', dist: 406, r: 8.2,  period: 164.8, color:'#4a63c8', ring:false }
-  ];
+const planets = [];
+const pickables = [sunMesh];
+const moonTex = tex('2k_moon.jpg');
 
-  planets.forEach(p => { p.trail = []; });
+for (const b of BODIES) {
+  const holder = new THREE.Group();          // sits on the orbit
+  const tilt = new THREE.Group();            // axial tilt
+  tilt.rotation.z = b.tilt * DEG;
+  holder.add(tilt);
+  system.add(holder);
 
-  // surface blobs on the sun, so its rotation is actually visible
-  const granules = Array.from({ length: 26 }, () => {
-    const y = (Math.random() * 2 - 1) * 0.82;
-    return {
-      a: Math.random() * Math.PI * 2,
-      y,
-      d: Math.sqrt(1 - y * y),          // keep blobs on the sphere, not the corners
-      r: Math.random() * 0.16 + 0.07,
-      hot: Math.random() < 0.45
-    };
+  const mat = b.earth ? earthMaterial() : new THREE.MeshStandardMaterial({ map: tex(b.tex), roughness: 1, metalness: 0 });
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(b.r, 96, 64), mat);
+  mesh.userData.body = b;
+  tilt.add(mesh);
+  pickables.push(mesh);
+
+  let clouds = null, atmo = null;
+  if (b.earth) {
+    clouds = new THREE.Mesh(new THREE.SphereGeometry(b.r * 1.012, 96, 64),
+      new THREE.MeshStandardMaterial({ alphaMap: tex('2k_earth_clouds.jpg', false), color: 0xffffff, transparent: true, depthWrite: false, roughness: 1 }));
+    tilt.add(clouds);
+  }
+  if (b.atmo) { atmo = atmosphere(b.r * (b.earth ? 1.035 : 1.025), b.atmo, b.atmoK); tilt.add(atmo); }
+  if (b.ring) tilt.add(ringMesh(b.r, b.ring));
+
+  const moons = (b.moons || []).map(m => {
+    const mm = new THREE.Mesh(new THREE.SphereGeometry(m.r, 32, 24),
+      new THREE.MeshStandardMaterial({ map: moonTex, color: m.tint, roughness: 1, metalness: 0 }));
+    (m.eq ? tilt : holder).add(mm);
+    return { ...m, mesh: mm };
   });
 
-  // ---- geometry --------------------------------------------------------
-  // Orbits are built as real circles in 3D and then rotated, so the tilt is an
-  // actual angle rather than a squashed axis.
-  //
-  //   tilt = angle between the orbital plane and the sun's direction of travel
-  //          through the galaxy. The solar apex sits about 60 deg out of the
-  //          ecliptic, which is why the planets corkscrew across the line of
-  //          motion instead of trailing flat behind.
-  //   cam  = how far the camera is lifted above that line of motion.
-  //
-  // Screen +x is the direction of travel, so trails stream off to the left.
-  const VIEWS = {
-    helical: { tilt: 60, cam: 20, label: 'helical (60° tilt)' },
-    flat:    { tilt: 0,  cam: 25, label: 'flat (top-down)' }
-  };
+  // orbit line, tilted by the real inclination
+  const pts = [], d0 = (Date.now() - J2000) / DAY_MS;
+  for (let i = 0; i <= 256; i++) pts.push(scenePos(b, d0 + (i / 256) * b.period, new THREE.Vector3()));
+  const orbit = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color: 0x8aa0cc, transparent: true, opacity: .2, depthWrite: false }));
+  system.add(orbit);
 
-  let viewName = 'helical';
-  let view;
-  function setView(name) {
-    viewName = name;
-    const v = VIEWS[name];
-    const th = v.tilt * Math.PI / 180, cm = v.cam * Math.PI / 180;
-    view = {
-      cosT: Math.cos(th), sinT: Math.sin(th),
-      cosC: Math.cos(cm), sinC: Math.sin(cm),
-      label: v.label
-    };
+  planets.push({ b, holder, tilt, mesh, clouds, atmo, moons, orbit, spin: 0 });
+}
+
+// Real heliocentric position (JPL elements), with the distance compressed to the
+// planet's display radius. Ecliptic (x, y, z-north) -> scene (x, z, -y).
+function scenePos(b, days, out) {
+  const h = helio(b.id, days), k = b.dist / Math.hypot(h.x, h.y, h.z);
+  return out.set(h.x * k, h.z * k, -h.y * k);
+}
+
+// ---------------------------------------------------------------- asteroid belt
+const belt = (() => {
+  const n = 3200, rnd = mulberry(42);
+  const geo = new THREE.IcosahedronGeometry(1, 0);
+  const p = geo.attributes.position;
+  for (let i = 0; i < p.count; i++) p.setXYZ(i, p.getX(i) * (.7 + rnd() * .6), p.getY(i) * (.6 + rnd() * .5), p.getZ(i) * (.7 + rnd() * .6));
+  geo.computeVertexNormals();
+  const mesh = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ color: 0x8c8278, roughness: 1, flatShading: true }), n);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), v = new THREE.Vector3(), e = new THREE.Euler();
+  for (let i = 0; i < n; i++) {
+    const a = rnd() * Math.PI * 2, d = 68 + (rnd() + rnd() + rnd()) / 3 * 14;
+    v.set(Math.cos(a) * d, (rnd() - .5) * 2.4, Math.sin(a) * d);
+    q.setFromEuler(e.set(rnd() * 6, rnd() * 6, rnd() * 6));
+    s.setScalar(.05 + Math.pow(rnd(), 3) * .32);
+    mesh.setMatrixAt(i, m.compose(v, q, s));
   }
-  setView('helical');
-
-  // a = angle around the orbit, d = orbit radius. Returns screen offset from
-  // the centre of the orbit, plus a depth value for painter's-order sorting.
-  function project(a, d) {
-    const ca = Math.cos(a), sa = Math.sin(a);
-    const x =  ca * d * view.cosT;      // tilt about the direction of travel
-    const y = -ca * d * view.sinT;
-    const z =  sa * d;
-    return {
-      x,
-      y: y * view.cosC - z * view.sinC, // then lift the camera
-      depth: y * view.sinC + z * view.cosC
-    };
-  }
-
-  // ---- controls --------------------------------------------------------
-  const speedEl   = document.getElementById('speed');
-  const zoomEl    = document.getElementById('zoom');
-  const orbitBtn  = document.getElementById('toggleOrbits');
-  const viewBtn   = document.getElementById('toggleView');
-  const trailBtn  = document.getElementById('toggleTrails');
-  const clockEl   = document.getElementById('clock');
-
-  let showOrbits = true;
-  let showTrails = true;
-  let zoom = 1;
-  let panX = 0, panY = 0;
-  let dragging = false, lastX = 0, lastY = 0;
-
-  orbitBtn.onclick = () => {
-    showOrbits = !showOrbits;
-    orbitBtn.textContent = 'Orbit paths: ' + (showOrbits ? 'on' : 'off');
-  };
-  trailBtn.onclick = () => {
-    showTrails = !showTrails;
-    trailBtn.textContent = 'Helix trails: ' + (showTrails ? 'on' : 'off');
-    if (!showTrails) planets.forEach(p => { p.trail.length = 0; });
-  };
-  viewBtn.onclick = () => {
-    setView(viewName === 'helical' ? 'flat' : 'helical');
-    viewBtn.textContent = 'View: ' + view.label;
-    planets.forEach(p => { p.trail.length = 0; });
-  };
-  zoomEl.oninput = () => { zoom = zoomEl.value / 100; };
-
-  // collapse the panel out of the way. The controls stay in the DOM while
-  // hidden, so their values keep driving the animation.
-  const ui = document.getElementById('ui');
-  const panelBtn = document.getElementById('panelToggle');
-  const chev = document.getElementById('chev');
-  function togglePanel() {
-    const hidden = ui.classList.toggle('collapsed');
-    chev.textContent = hidden ? 'show' : 'hide';
-    panelBtn.setAttribute('aria-expanded', String(!hidden));
-  }
-  panelBtn.onclick = togglePanel;
-  window.addEventListener('keydown', e => {
-    if (e.key === 'h' || e.key === 'H') togglePanel();
-  });
-
-  canvas.addEventListener('mousedown', e => { dragging = true; lastX = e.clientX; lastY = e.clientY; });
-  window.addEventListener('mouseup', () => { dragging = false; });
-  window.addEventListener('mousemove', e => {
-    if (!dragging) return;
-    panX += e.clientX - lastX; panY += e.clientY - lastY;
-    lastX = e.clientX; lastY = e.clientY;
-  });
-  canvas.addEventListener('wheel', e => {
-    e.preventDefault();
-    zoom = Math.min(2.2, Math.max(0.4, zoom * (e.deltaY < 0 ? 1.1 : 0.9)));
-    zoomEl.value = Math.round(zoom * 100);
-  }, { passive:false });
-
-  // touch: one finger pans
-  canvas.addEventListener('touchstart', e => {
-    const t = e.touches[0]; dragging = true; lastX = t.clientX; lastY = t.clientY;
-  }, { passive:true });
-  canvas.addEventListener('touchmove', e => {
-    if (!dragging) return;
-    const t = e.touches[0];
-    panX += t.clientX - lastX; panY += t.clientY - lastY;
-    lastX = t.clientX; lastY = t.clientY;
-  }, { passive:true });
-  window.addEventListener('touchend', () => { dragging = false; });
-
-  // ---- drawing helpers -------------------------------------------------
-  function shade(hex, mul) {
-    const n = parseInt(hex.slice(1), 16);
-    const c = [n >> 16 & 255, n >> 8 & 255, n & 255]
-      .map(v => Math.max(0, Math.min(255, Math.round(v * mul))));
-    return 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
-  }
-
-  function sphere(x, y, r, color, lx, ly) {
-    const ang = Math.atan2(ly - y, lx - x);   // lit from the sun's direction
-    const g = ctx.createRadialGradient(
-      x + Math.cos(ang) * r * 0.38, y + Math.sin(ang) * r * 0.38, r * 0.08,
-      x, y, r
-    );
-    g.addColorStop(0, shade(color, 1.45));
-    g.addColorStop(0.55, color);
-    g.addColorStop(1, shade(color, 0.28));
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-  }
-
-  // a tilted circle is no longer an axis-aligned ellipse, so trace it
-  function ringPath(ox, oy, d, steps) {
-    ctx.beginPath();
-    for (let i = 0; i <= steps; i++) {
-      const q = project((i / steps) * Math.PI * 2, d);
-      if (i === 0) ctx.moveTo(ox + q.x, oy + q.y);
-      else         ctx.lineTo(ox + q.x, oy + q.y);
-    }
-  }
-
-  function drawRing(x, y, r) {
-    ctx.strokeStyle = 'rgba(226,206,160,.55)';
-    ctx.lineWidth = Math.max(1, r * 0.28);
-    ringPath(x, y, r * 1.85, 40); ctx.stroke();
-    ctx.strokeStyle = 'rgba(226,206,160,.22)';
-    ctx.lineWidth = Math.max(1, r * 0.16);
-    ringPath(x, y, r * 2.35, 40); ctx.stroke();
-  }
-
-  // ---- main loop -------------------------------------------------------
-  let t = 0, tick = 0, prev = performance.now();
-  const TRAIL_MAX = 260;
-
-  function frame(now) {
-    const dt = Math.min((now - prev) / 1000, 0.05);
-    prev = now;
-    const rate = speedEl.value / 100;
-    t += dt * rate * 0.35;                 // t counts in "years"
-
-    // The sun is hauling the whole system round the galactic centre at
-    // ~230 km/s. We hold it on screen and let everything else stream past.
-    const travel = dt * rate * 34;
-
-    ctx.fillStyle = '#04060f';
-    ctx.fillRect(0, 0, W, H);
-
-    // starfield: brighter (nearer) stars slide faster — that parallax is
-    // what makes the motion read as motion rather than as a static field
-    for (const s of stars) {
-      const near = s.r / 1.35;
-      s.x -= travel * (0.25 + near);
-      if (s.x < -2) { s.x = W + 2; s.y = Math.random() * H; }
-      s.tw += dt * s.ts;
-      ctx.globalAlpha = s.a * (0.65 + 0.35 * Math.sin(s.tw));
-      ctx.fillStyle = '#dce7ff';
-      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-
-    // the sun also wobbles around the barycenter as Jupiter and Saturn pull on it
-    const w1 = project((t / 11.86) * Math.PI * 2, 9 * zoom);
-    const w2 = project((t / 29.45) * Math.PI * 2, 4 * zoom);
-    const cx = W / 2 + panX + w1.x + w2.x;
-    const cy = H / 2 + panY + w1.y + w2.y;
-    const spin = t * (365 / 25) * Math.PI * 2;   // solar rotation, ~25 days
-
-    if (showOrbits) {
-      ctx.strokeStyle = 'rgba(130,165,235,.16)';
-      ctx.lineWidth = 1;
-      for (const p of planets) { ringPath(cx, cy, p.dist * zoom, 96); ctx.stroke(); }
-    }
-
-    // work out where each planet is, and record the helix it leaves behind
-    const drawn = planets.map(p => {
-      const a = (t / p.period) * Math.PI * 2;
-      const q = project(a, p.dist * zoom);
-      const x = cx + q.x, y = cy + q.y;
-
-      if (showTrails) {
-        // existing trail points fall back as the system advances, which is
-        // what turns a closed orbit into an open corkscrew
-        for (const s of p.trail) s.x -= travel;
-        p.trail.push({ x, y });
-        while (p.trail.length > TRAIL_MAX || (p.trail.length && p.trail[0].x < -60)) {
-          p.trail.shift();
-        }
-      }
-      return { p, x, y, depth: q.depth };
-    }).sort((u, v) => u.depth - v.depth);     // far side first
-
-    if (showTrails) {
-      ctx.lineWidth = 1.6;
-      for (const p of planets) {
-        const tr = p.trail;
-        const bright = shade(p.color, 1.25);
-        for (let i = 1; i < tr.length; i++) {
-          ctx.globalAlpha = 0.12 + (i / tr.length) * 0.62;
-          ctx.strokeStyle = bright;
-          ctx.beginPath();
-          ctx.moveTo(tr[i - 1].x, tr[i - 1].y);
-          ctx.lineTo(tr[i].x, tr[i].y);
-          ctx.stroke();
-        }
-      }
-      ctx.globalAlpha = 1;
-    }
-
-    // sun: corona + pulsing core
-    const sunR = 26 * zoom;
-    const pulse = 1 + 0.035 * Math.sin(now / 520);
-    const glow = ctx.createRadialGradient(cx, cy, sunR * 0.2, cx, cy, sunR * 6);
-    glow.addColorStop(0,    'rgba(255,220,130,.75)');
-    glow.addColorStop(0.18, 'rgba(255,160,50,.22)');
-    glow.addColorStop(0.45, 'rgba(255,120,30,.07)');
-    glow.addColorStop(1,    'rgba(255,120,30,0)');
-    ctx.fillStyle = glow;
-    ctx.beginPath(); ctx.arc(cx, cy, sunR * 6, 0, Math.PI * 2); ctx.fill();
-
-    const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, sunR * pulse);
-    core.addColorStop(0,   '#fffdf0');
-    core.addColorStop(0.5, '#ffd75e');
-    core.addColorStop(1,   '#ff9314');
-    ctx.fillStyle = core;
-    ctx.beginPath(); ctx.arc(cx, cy, sunR * pulse, 0, Math.PI * 2); ctx.fill();
-
-    // granulation, carried around by the sun's rotation so the spin is visible
-    ctx.save();
-    ctx.beginPath(); ctx.arc(cx, cy, sunR * pulse, 0, Math.PI * 2); ctx.clip();
-    for (const g of granules) {
-      const a = g.a + spin;
-      const face = Math.cos(a);                 // <= 0 means it's on the far side
-      if (face <= 0) continue;
-      ctx.globalAlpha = 0.30 * face;
-      ctx.fillStyle = g.hot ? '#fff6c8' : '#e8760f';
-      ctx.beginPath();
-      ctx.ellipse(cx + Math.cos(a) * g.d * sunR, cy + g.y * sunR,
-                  g.r * sunR * face, g.r * sunR, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-    ctx.restore();
-
-    // planets, far side already sorted to the back
-    ctx.font = '11px ui-monospace, Menlo, Consolas, monospace';
-    ctx.textAlign = 'center';
-
-    for (const { p, x, y } of drawn) {
-      const r = p.r * zoom;
-      if (p.ring) drawRing(x, y, r);
-      sphere(x, y, r, p.color, cx, cy);
-
-      if (p.moons) {
-        for (const m of p.moons) {
-          const q = project((t / m.period) * Math.PI * 2, m.dist * zoom);
-          sphere(x + q.x, y + q.y, Math.max(0.8, m.r * zoom), m.color, x, y);
-        }
-      }
-
-      ctx.fillStyle = 'rgba(190,210,250,.62)';
-      ctx.fillText(p.name, x, y - r - 7);
-    }
-
-    if (++tick % 12 === 0) {
-      // 230 km/s around the galactic centre; one lap takes ~230 million years
-      const km = t * 230 * 3.156e7;
-      clockEl.innerHTML =
-        'elapsed <b>' + t.toFixed(1) + '</b> yr<br>' +
-        'travelled <b>' + km.toExponential(2) + '</b> km<br>' +
-        'galactic orbit <b>' + (t / 230e6 * 100).toExponential(1) + '%</b>';
-    }
-
-    requestAnimationFrame(frame);
-  }
-
-  window.addEventListener('resize', resize);
-  resize();
-  requestAnimationFrame(frame);
+  const g = new THREE.Group(); g.add(mesh); system.add(g);
+  return g;
 })();
+
+// ---------------------------------------------------------------- galactic dust (only visible in galactic mode)
+const dust = (() => {
+  const n = 1800, box = 700, pos = new Float32Array(n * 3), rnd = mulberry(9);
+  for (let i = 0; i < n * 3; i++) pos[i] = (rnd() - .5) * box;
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const pts = new THREE.Points(g, new THREE.PointsMaterial({ color: 0x9fb4d8, size: 1.3, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false }));
+  scene.add(pts);
+  return { pts, pos, box, n };
+})();
+
+// ---------------------------------------------------------------- helix trails
+const TRAIL_N = 900;
+const trails = planets.map(p => {
+  const pos = new Float32Array(TRAIL_N * 3), col = new Float32Array(TRAIL_N * 3);
+  const c = new THREE.Color(p.b.earth ? 0x6fa8ff : 0xffffff);
+  if (!p.b.earth) {
+    const tints = { mercury: 0xb8b0a8, venus: 0xf0c890, mars: 0xff8a5c, jupiter: 0xf0c9a0, saturn: 0xf2dca8, uranus: 0x9fe6ee, neptune: 0x6f8cff };
+    c.set(tints[p.b.id]);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.setDrawRange(0, 0);
+  const line = new THREE.Line(g, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+  line.frustumCulled = false;
+  scene.add(line);
+  return { line, pos, col, c, count: 0, last: new THREE.Vector3(Infinity, 0, 0) };
+});
+function clearTrails() { trails.forEach(t => { t.count = 0; t.last.set(Infinity, 0, 0); t.line.geometry.setDrawRange(0, 0); }); }
+
+// ---------------------------------------------------------------- zodiac ring (sidereal)
+// Centred on Earth, because rashis and nakshatras are measured from here. The
+// ring lives in the J2000 frame, so sidereal 0° (Mesha) sits at the Lahiri
+// ayanamsa minus precession: a constant, fixed to the stars.
+const ZR_IN = 300, ZR_OUT = 346;
+const zodiac = new THREE.Group();
+zodiac.rotation.y = (ayanamsa(0) - precession(0)) * DEG;
+zodiac.visible = false;
+scene.add(zodiac);
+const zodiacCanvas = document.createElement('canvas');
+zodiacCanvas.width = 8192; zodiacCanvas.height = 512;
+const zodiacTex = new THREE.CanvasTexture(zodiacCanvas);
+zodiacTex.colorSpace = THREE.SRGBColorSpace;
+zodiacTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+{
+  const SEG = 720, geo = new THREE.RingGeometry(ZR_IN, ZR_OUT, SEG, 1);
+  const uv = geo.attributes.uv;
+  // u runs clockwise and v outward; drawZodiac lays the canvas out to match
+  for (let j = 0; j <= 1; j++) for (let i = 0; i <= SEG; i++) uv.setXY(j * (SEG + 1) + i, 1 - i / SEG, j);
+  const ring = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: zodiacTex, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+  ring.rotation.x = -Math.PI / 2;
+  zodiac.add(ring);
+}
+function drawZodiac() {
+  const W = zodiacCanvas.width, H = zodiacCanvas.height, g = zodiacCanvas.getContext('2d');
+  // Canvas x runs clockwise (decreasing longitude) and the canvas top is the ring's
+  // outer edge, so from the usual camera angle the far side of the ring reads upright.
+  const X = lon => W - lon * W / 360;
+  // world units per pixel differ along/across the ring; stretch glyphs so they read square
+  const k = (H / (ZR_OUT - ZR_IN)) / (W / (2 * Math.PI * (ZR_IN + ZR_OUT) / 2));
+  const RASHI_H = 212, TICK_Y = 212, NAK_Y = 282;        // bands, outer to inner
+  g.clearRect(0, 0, W, H);
+  const text = (str, x, y, size, color, weight = 400, family = '"IBM Plex Mono", monospace') => {
+    g.save(); g.translate(x, y); g.scale(1, k);
+    g.font = `${weight} ${size}px ${family}`; g.fillStyle = color; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(str, 0, 0); g.restore();
+  };
+  for (let i = 0; i < 12; i++) {                         // rashis
+    const x1 = X(i * 30), x0 = X(i * 30 + 30), w = x1 - x0;
+    g.fillStyle = i % 2 ? 'rgba(243,199,122,.05)' : 'rgba(243,199,122,.11)';
+    g.fillRect(x0, 0, w, RASHI_H);
+    g.fillStyle = 'rgba(243,199,122,.9)'; g.fillRect(x1 - 3, 0, 3, NAK_Y);
+    text(RASHIS[i][0].toUpperCase(), x0 + w / 2, 78, 46, '#f3c77a', 700, 'Syncopate, sans-serif');
+    text(`${RASHIS[i][1]} · ${i * 30}°–${i * 30 + 30}°`, x0 + w / 2, 150, 17, 'rgba(243,199,122,.7)');
+  }
+  for (let d = 0; d < 360; d++) {                        // degree ticks, hanging off the rashi band
+    const x = X(d), len = d % 10 === 0 ? 46 : d % 5 === 0 ? 30 : 16;
+    g.fillStyle = d % 30 === 0 ? 'rgba(243,199,122,.95)' : 'rgba(243,199,122,.45)';
+    g.fillRect(x - 1, TICK_Y, d % 30 === 0 ? 3 : 1.5, len);
+    if (d % 10 === 0) text(String(d % 30), x - 12, TICK_Y + 58, 12, 'rgba(243,199,122,.7)');
+  }
+  const NK = 360 / 27;
+  for (let i = 0; i < 27; i++) {                         // nakshatras + padas
+    const x1 = X(i * NK), x0 = X((i + 1) * NK), w = x1 - x0;
+    g.fillStyle = i % 2 ? 'rgba(130,160,225,.07)' : 'rgba(130,160,225,.14)';
+    g.fillRect(x0, NAK_Y, w, H - NAK_Y);
+    g.fillStyle = 'rgba(160,185,240,.7)'; g.fillRect(x1 - 2, NAK_Y, 2, H - NAK_Y);
+    for (let q = 1; q < 4; q++) { g.fillStyle = 'rgba(160,185,240,.35)'; g.fillRect(x1 - q * w / 4, H - 34, 1, 34); }
+    for (let q = 0; q < 4; q++) text(String(q + 1), x1 - (q + .5) * w / 4, H - 17, 13, 'rgba(180,200,245,.55)');
+    text(NAKSHATRAS[i][0], x0 + w / 2, NAK_Y + 80, NAKSHATRAS[i][0].length > 13 ? 21 : 25, 'rgba(215,226,250,.92)', 500, '"IBM Plex Sans", sans-serif');
+    text(dms(i * NK), x0 + w / 2, NAK_Y + 136, 13, 'rgba(160,180,225,.55)');
+  }
+  zodiacTex.needsUpdate = true;
+}
+document.fonts.ready.then(drawZodiac);
+
+// a glowing bead on the ring for every graha, at its true sidereal longitude
+const beadMat = new THREE.MeshBasicMaterial({ color: 0xffd58a });
+const beads = GRAHAS.map(([id, , , ab]) => {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(1.8, 16, 12), beadMat);
+  m.visible = false; scene.add(m);
+  return { id, ab, mesh: m };
+});
+
+// ---------------------------------------------------------------- labels
+const labelsEl = document.getElementById('labels');
+const labelTargets = [{ b: SUN, obj: sunMesh }, ...planets.map(p => ({ b: p.b, obj: p.mesh }))];
+beads.forEach(bd => labelTargets.push({ b: { id: 'bead-' + bd.id, name: bd.ab }, obj: bd.mesh, bead: bd }));
+labelTargets.forEach(t => {
+  const el = document.createElement('button');
+  if (t.bead) el.className = 'graha';
+  el.textContent = t.b.name;
+  el.onclick = () => t.bead ? openJyo(true) : select(t.b.id);
+  labelsEl.appendChild(el);
+  t.el = el;
+});
+
+// ---------------------------------------------------------------- rashi / nakshatra sky (Earth view)
+const skies = { rashi: createSky(labelsEl, 'rashi', () => openJyo(true)), nakshatra: createSky(labelsEl, 'nakshatra', () => openJyo(true)) };
+Object.values(skies).forEach(k => scene.add(k.group));
+let skyMode = 'rashi';            // clicking Earth always opens on the rashis
+function showSky() {
+  const on = focus && focus.id === 'earth';
+  for (const [k, sk] of Object.entries(skies)) sk.show(on && k === skyMode, camera);
+  document.getElementById('skyPick').hidden = !on;
+  document.querySelectorAll('#skyPick button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === skyMode)));
+}
+function setSkyMode(m) {
+  for (const [k, sk] of Object.entries(skies)) if (k !== m) sk.hideNow();
+  skyMode = m;
+  showSky();
+}
+document.querySelectorAll('#skyPick button').forEach(b => { b.onclick = () => setSkyMode(b.dataset.mode); });
+
+// ---------------------------------------------------------------- planet bar
+const bar = document.getElementById('bar');
+const barBtns = {};
+[{ ...SUN, tex: '2k_sun.jpg' }, ...BODIES].forEach((b, i) => {
+  const btn = document.createElement('button');
+  btn.innerHTML = `<i class="orb${b.id === 'sun' ? ' sun' : ''}" style="background-image:url(${TEX + b.tex})"></i><span>${b.name}</span>`;
+  btn.title = `${b.name} (${i})`;
+  btn.onclick = () => select(b.id);
+  bar.appendChild(btn);
+  barBtns[b.id] = btn;
+});
+
+// ---------------------------------------------------------------- state
+const speedEl = document.getElementById('speed');
+let simMs = Date.now();
+let paused = false, helix = false, showOrbits = true;
+let travelled = 0;                    // km, galactic mode
+const APEX = new THREE.Vector3(Math.cos(60 * DEG), Math.sin(60 * DEG), 0);   // 60° out of the orbital plane
+const UNITS_PER_DAY = 0.11;
+
+function daysPerSecond() {
+  const s = +speedEl.value;
+  return s === 0 ? 0 : 0.01 * Math.pow(10, s / 100 * 5);
+}
+function fmtRate(d) {
+  if (d === 0) return 'stopped';
+  if (d < 1 / 24) return `1 s = ${(d * 1440).toFixed(d * 1440 < 10 ? 1 : 0)} min`;
+  if (d < 1) return `1 s = ${(d * 24).toFixed(d * 24 < 10 ? 1 : 0)} hours`;
+  if (d < 365) return `1 s = ${d.toFixed(d < 10 ? 1 : 0)} days`;
+  return `1 s = ${(d / 365.25).toFixed(1)} years`;
+}
+function updateSpeedUi() {
+  document.getElementById('speedTxt').textContent = paused ? 'paused' : fmtRate(daysPerSecond());
+  speedEl.style.setProperty('--fill', speedEl.value + '%');
+}
+speedEl.addEventListener('input', updateSpeedUi);
+updateSpeedUi();
+
+function setPressed(id, on) { document.getElementById(id).setAttribute('aria-pressed', String(on)); }
+document.getElementById('btnPlay').onclick = togglePause;
+function togglePause() {
+  paused = !paused;
+  const b = document.getElementById('btnPlay'); b.textContent = paused ? 'Play' : 'Pause'; setPressed('btnPlay', paused);
+  updateSpeedUi();
+}
+document.getElementById('btnToday').onclick = () => { simMs = Date.now(); clearTrails(); };
+document.getElementById('btnOrbits').onclick = () => { showOrbits = !showOrbits; setPressed('btnOrbits', showOrbits); };
+document.getElementById('btnLabels').onclick = () => {
+  const on = document.body.classList.toggle('no-labels'); setPressed('btnLabels', !on);
+};
+document.getElementById('btnHelix').onclick = () => {
+  helix = !helix; setPressed('btnHelix', helix);
+  document.getElementById('helixNote').hidden = !helix;
+  clearTrails();
+  if (!helix) {   // snap the system back home, keeping the camera's view of it
+    shiftWorld(system.position.clone().negate());
+    travelled = 0;
+  } else {
+    if (+speedEl.value < 74) { speedEl.value = 74; updateSpeedUi(); }   // ~50 days/s so the corkscrews form quickly
+  }
+  if (helix && (!focus || focus.id === 'sun')) {
+    flyTo(null, new THREE.Vector3(-260, 160, 300));
+  }
+};
+
+const ctl = document.getElementById('controls');
+if (innerWidth < 760) { ctl.classList.add('collapsed'); document.getElementById('ctlChev').textContent = 'show'; document.getElementById('ctlToggle').setAttribute('aria-expanded', 'false'); }
+document.getElementById('ctlToggle').onclick = () => {
+  const c = ctl.classList.toggle('collapsed');
+  document.getElementById('ctlChev').textContent = c ? 'show' : 'hide';
+  document.getElementById('ctlToggle').setAttribute('aria-expanded', String(!c));
+};
+
+// ---------------------------------------------------------------- jyotish panel
+const jyoEl = document.getElementById('jyo'), jyoBody = document.getElementById('jyoBody');
+const jyoTime = document.getElementById('jyoTime'), jyoMeta = document.getElementById('jyoMeta');
+const fmtLocal = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
+const toLocalInput = ms => new Date(ms - new Date(ms).getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+jyoBody.innerHTML = GRAHAS.map(([id, sa, en], i) =>
+  `<tr data-id="${id}" class="${i > 8 ? 'outer' : ''}"><td class="g"><span class="nm">${sa}</span><span class="rr"></span><small>${en}</small></td><td></td><td class="num"></td><td></td><td class="num pada"></td><td class="num lon"></td></tr>`).join('');
+jyoBody.addEventListener('click', e => {
+  const id = e.target.closest('tr')?.dataset.id;
+  if (id === 'sun' || BODIES.some(b => b.id === id)) select(id);
+});
+function openJyo(on) {
+  jyoEl.hidden = !on; setPressed('btnJyo', on);
+  if (on) { jyoTime.value = toLocalInput(simMs); updateJyo(); }
+}
+document.getElementById('btnJyo').onclick = () => openJyo(jyoEl.hidden);
+document.getElementById('jyoClose').onclick = () => openJyo(false);
+function setTime(ms) {
+  simMs = ms; if (!paused) togglePause(); clearTrails();
+  jyoTime.value = toLocalInput(simMs); updateJyo();
+}
+document.getElementById('jyoNow').onclick = () => setTime(Date.now());
+jyoTime.addEventListener('change', () => {
+  const ms = new Date(jyoTime.value).getTime();
+  if (!isNaN(ms)) setTime(ms);
+});
+function toggleZodiac() {
+  zodiac.visible = !zodiac.visible; setPressed('btnZodiac', zodiac.visible);
+  document.body.classList.toggle('no-zodiac', !zodiac.visible);
+  beads.forEach(b => { b.mesh.visible = zodiac.visible; });
+  if (zodiac.visible && !focus) flyTo(null, new THREE.Vector3(0, 560, 380));
+}
+document.body.classList.add('no-zodiac');
+document.getElementById('btnZodiac').onclick = toggleZodiac;
+
+function updateJyo() {
+  const days = (simMs - J2000) / DAY_MS;
+  jyoMeta.innerHTML = `<b>${fmtLocal.format(simMs)}</b> · Lahiri ayanamsa <b>${dms(ayanamsa(days), true)}</b>`;
+  if (document.activeElement !== jyoTime && !paused) jyoTime.value = toLocalInput(simMs);
+  for (const row of jyoBody.rows) {
+    const j = jyotish(row.dataset.id, days), c = row.cells, R = RASHIS[j.rashi], N = NAKSHATRAS[j.nak];
+    c[0].querySelector('.rr').innerHTML = j.retro ? '<span class="r">R</span>' : '';
+    c[1].innerHTML = `${R[0]}<small>${R[1]}</small>`;
+    c[2].textContent = dms(j.inSign);
+    c[3].innerHTML = `${N[0]}<small><span class="pm">pada ${j.pada} · </span>lord ${N[1]}</small>`;
+    c[4].textContent = j.pada;
+    c[5].textContent = dms(j.sid);
+  }
+}
+function infoJyo(id) {
+  const dl = document.getElementById('infoJyo');
+  if (!id || !GRAHAS.some(g => g[0] === id)) { dl.innerHTML = ''; return; }
+  const j = jyotish(id, (simMs - J2000) / DAY_MS);
+  dl.innerHTML = `<dt>Rashi</dt><dd>${RASHIS[j.rashi][0]} ${dms(j.inSign)}${j.retro ? ' R' : ''}</dd>` +
+    `<dt>Nakshatra</dt><dd>${NAKSHATRAS[j.nak][0]} · pada ${j.pada}</dd>`;
+}
+
+// ---------------------------------------------------------------- focus & camera flights
+let focus = null;          // body being followed (null = the Sun, overview)
+let flight = null;
+const lastTarget = new THREE.Vector3();
+const tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3();
+
+function bodyWorldPos(id, out) {
+  if (!id || id === 'sun') return sunMesh.getWorldPosition(out);
+  return planets.find(p => p.b.id === id).mesh.getWorldPosition(out);
+}
+function bodyRadius(id) { return !id || id === 'sun' ? SUN.r : BODIES.find(b => b.id === id).r; }
+
+function flyTo(id, offset) {
+  const r = bodyRadius(id);
+  if (id === 'earth' && !offset) {
+    // sit nearly level with the zodiac, half-facing the Sun, so the rashis wrap round
+    // behind Earth and both its day side and city lights show
+    const e = planets[2].mesh.getWorldPosition(new THREE.Vector3());
+    const toSun = sunMesh.getWorldPosition(new THREE.Vector3()).sub(e).setY(0).normalize();
+    offset = toSun.applyAxisAngle(new THREE.Vector3(0, 1, 0), 62 * DEG).setY(.1).normalize().multiplyScalar(16);
+  }
+  const dir = camera.position.clone().sub(controls.target).normalize();
+  if (dir.y < .12) dir.y = .12;
+  dir.normalize();
+  const b = id && id !== 'sun' ? BODIES.find(x => x.id === id) : null;
+  const dist = offset ? offset.length() : !id ? 330 : id === 'sun' ? 70 : r * (b.ring ? 7 : 6.5);
+  flight = { t: 0, dur: 1.8, fromCam: camera.position.clone().sub(controls.target), toOff: offset ? offset.clone() : dir.multiplyScalar(dist), fromTarget: controls.target.clone(), id };
+  controls.enabled = false;
+  controls.minDistance = r * 1.6;
+}
+
+function select(id) {
+  if (id === 'earth' && !(focus && focus.id === 'earth')) {
+    for (const [k, sk] of Object.entries(skies)) if (k !== 'rashi') sk.hideNow();
+    skyMode = 'rashi';
+  }
+  focus = id ? { id } : null;
+  flyTo(id === 'overview' ? null : id);
+  if (id === 'overview') focus = null;
+  showSky();
+  Object.entries(barBtns).forEach(([k, b]) => b.setAttribute('aria-current', String(k === id)));
+  labelTargets.forEach(t => t.el.classList.toggle('on', t.b.id === id));
+  planets.forEach(p => { p.orbit.material.opacity = p.b.id === id ? .6 : .2; p.orbit.material.color.set(p.b.id === id ? 0xf3c77a : 0x8aa0cc); });
+  const info = document.getElementById('info');
+  if (!id || id === 'overview') { info.hidden = true; return; }
+  const b = id === 'sun' ? SUN : BODIES.find(x => x.id === id);
+  document.getElementById('infoKind').textContent = b.kind;
+  document.getElementById('infoName').textContent = b.name;
+  document.getElementById('infoFact').textContent = b.fact;
+  document.getElementById('infoStats').innerHTML = b.stats.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+  infoJyo(id);
+  info.hidden = false;
+}
+document.getElementById('infoClose').onclick = () => select('overview');
+
+// click a planet in the scene
+const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
+let downAt = null;
+canvas.addEventListener('pointerdown', e => { downAt = [e.clientX, e.clientY]; });
+canvas.addEventListener('pointerup', e => {
+  if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 5) return;
+  mouse.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  ray.setFromCamera(mouse, camera);
+  const hit = ray.intersectObjects(pickables, false)[0];
+  if (hit) select(hit.object.userData.body.id);
+});
+
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'h' || e.key === 'H') document.body.classList.toggle('ui-hidden');
+  else if (e.key === ' ') { e.preventDefault(); togglePause(); }
+  else if (e.key === 'Escape') select('overview');
+  else if (e.key === 'j' || e.key === 'J') openJyo(jyoEl.hidden);
+  else if (e.key === 'z' || e.key === 'Z') toggleZodiac();
+  else if ((e.key === 's' || e.key === 'S') && focus && focus.id === 'earth') setSkyMode({ rashi: 'nakshatra', nakshatra: 'off', off: 'rashi' }[skyMode]);
+  else if (/^[0-8]$/.test(e.key)) select(e.key === '0' ? 'sun' : BODIES[+e.key - 1].id);
+});
+
+// move everything that lives in world space (keeps floats small in galactic mode)
+function shiftWorld(d) {
+  system.position.add(d);
+  camera.position.add(d); controls.target.add(d); lastTarget.add(d);
+  if (flight) flight.fromTarget.add(d);
+  trails.forEach(t => {
+    for (let i = 0; i < t.count; i++) { t.pos[i * 3] += d.x; t.pos[i * 3 + 1] += d.y; t.pos[i * 3 + 2] += d.z; }
+    t.last.add(d); t.line.geometry.attributes.position.needsUpdate = true;
+  });
+}
+
+// ---------------------------------------------------------------- frame
+const clock = new THREE.Clock();
+const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const dateEl = document.getElementById('date'), subEl = document.getElementById('sub');
+const fmtDate = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
+let uiTick = 0;
+
+function frame() {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const rate = paused ? 0 : daysPerSecond();
+  const dDays = rate * dt;
+  simMs += dDays * DAY_MS;
+  const days = (simMs - J2000) / DAY_MS;
+
+  // galactic travel
+  if (helix && dDays) {
+    system.position.addScaledVector(APEX, dDays * UNITS_PER_DAY);
+    travelled += dDays * 86400 * 230;
+    if (system.position.length() > 2500) shiftWorld(system.position.clone().negate());
+  }
+  dust.pts.material.opacity += ((helix ? .55 : 0) - dust.pts.material.opacity) * Math.min(1, dt * 2);
+
+  // Sun
+  sunMat.uniforms.time.value += dt * (0.4 + Math.min(rate, 50) * 0.02);
+  sunMesh.rotation.y = (days / 25.4) * Math.PI * 2 % (Math.PI * 2);
+  const sunW = sunMesh.getWorldPosition(tmp2);
+
+  // planets
+  for (const p of planets) {
+    scenePos(p.b, days, p.holder.position);
+    // spin: real rate, capped so fast time doesn't turn into a strobe
+    const revPerSec = rate * 24 / p.b.dayH;
+    p.spin += Math.sign(revPerSec) * Math.min(Math.abs(revPerSec), 0.35) * dt * Math.PI * 2;
+    p.mesh.rotation.y = p.spin;
+    if (p.clouds) p.clouds.rotation.y = p.spin * 1.04 + days * 0.002;
+    if (p.mesh.material.uniforms) p.mesh.material.uniforms.sunPos.value.copy(sunW);
+    if (p.atmo) p.atmo.material.uniforms.sunPos.value.copy(sunW);
+    for (const m of p.moons) {
+      const ma = m.name === 'Moon' ? (geoLongitude('moon', days) - precession(days)) * DEG : (days / m.period) * Math.PI * 2;
+      m.mesh.position.set(Math.cos(ma) * m.dist, 0, -Math.sin(ma) * m.dist);
+    }
+    p.orbit.visible = showOrbits && !helix && !(focus && focus.id === 'earth');
+  }
+  belt.rotation.y = (days / (4.6 * 365.25)) * Math.PI * 2;
+  belt.visible = !(focus && focus.id === 'earth');   // keeps the rashi sky clean
+
+  // rashi / nakshatra sky: brighten the figures that hold a graha right now
+  for (const [k, sk] of Object.entries(skies)) {
+    if (sk.group.visible && uiTick % 20 === 0) {
+      const hot = {};
+      for (const [id, sa] of GRAHAS.slice(0, 9)) { const j = jyotish(id, days); (hot[k === 'rashi' ? j.rashi : j.nak] ||= []).push(sa); }
+      sk.setOccupants(hot);
+    }
+  }
+
+  // zodiac ring rides with Earth; beads sit at each graha's true longitude
+  if (zodiac.visible) {
+    const ew = planets[2].mesh.getWorldPosition(tmp);
+    zodiac.position.copy(ew);
+    const pr = precession(days);
+    for (const bd of beads) {
+      const a = (geoLongitude(bd.id, days) - pr) * DEG;
+      bd.mesh.position.set(ew.x + Math.cos(a) * (ZR_IN - 7), ew.y, ew.z - Math.sin(a) * (ZR_IN - 7));
+    }
+  }
+
+  // trails
+  if (helix) {
+    planets.forEach((p, i) => {
+      const t = trails[i], w = p.mesh.getWorldPosition(tmp);
+      if (t.last.distanceTo(w) < 0.35) return;
+      if (t.count === TRAIL_N) { t.pos.copyWithin(0, 3); t.count--; }
+      t.pos.set([w.x, w.y, w.z], t.count * 3); t.count++; t.last.copy(w);
+      t.line.geometry.setDrawRange(0, t.count);
+      t.line.geometry.attributes.position.needsUpdate = true;
+      if (t.count < TRAIL_N) {   // keep the fade anchored to the head while the trail grows
+        for (let j = 0; j < t.count; j++) { const k = Math.pow((j + 1) / t.count, 1.6); t.col[j * 3] = t.c.r * k; t.col[j * 3 + 1] = t.c.g * k; t.col[j * 3 + 2] = t.c.b * k; }
+        t.line.geometry.attributes.color.needsUpdate = true;
+      }
+    });
+  }
+
+  // dust wraps round the sun so it streams past forever
+  if (helix) {
+    const { pos, box, n } = dust, h = box / 2;
+    for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) {
+      const c = sunW.getComponent(k), j = i * 3 + k;
+      if (pos[j] < c - h) pos[j] += box; else if (pos[j] > c + h) pos[j] -= box;
+    }
+    dust.pts.geometry.attributes.position.needsUpdate = true;
+  }
+
+  // camera follow + flights
+  const target = bodyWorldPos(focus && focus.id, tmp.set(0, 0, 0));
+  if (flight) {
+    flight.t += dt / flight.dur;
+    const k = ease(Math.min(flight.t, 1));
+    controls.target.lerpVectors(flight.fromTarget, target, k);
+    camera.position.copy(controls.target).add(tmp2.copy(flight.fromCam).lerp(flight.toOff, k));
+    if (flight.t >= 1) { flight = null; controls.enabled = true; }
+  } else {
+    camera.position.add(tmp2.subVectors(target, lastTarget));
+    controls.target.copy(target);
+  }
+  lastTarget.copy(target);
+  controls.update();
+  camera.updateMatrixWorld();
+  for (const sk of Object.values(skies)) sk.update(dt, camera, innerWidth, innerHeight);
+
+  // labels
+  if (!document.body.classList.contains('no-labels')) {
+    for (const t of labelTargets) {
+      const w = t.obj.getWorldPosition(tmp);
+      const dist = w.distanceTo(camera.position);
+      w.project(camera);
+      if (t.bead && !zodiac.visible) { t.el.style.display = 'none'; continue; }
+      const r = t.bead ? 1.8 : bodyRadius(t.b.id);
+      const vis = w.z < 1 && Math.abs(w.x) < 1.1 && Math.abs(w.y) < 1.1 && dist > r * 3.2 && !(focus && focus.id === t.b.id);
+      t.el.style.display = vis ? '' : 'none';
+      if (vis) {
+        const px = (w.x + 1) / 2 * innerWidth, py = (1 - w.y) / 2 * innerHeight;
+        const pr = r / (dist * Math.tan(camera.fov * DEG / 2)) * innerHeight / 2;
+        t.el.style.transform = `translate(${px + pr + 6}px, ${py - pr - 18}px)`;
+      }
+    }
+  }
+
+  if (++uiTick % 10 === 0) {
+    dateEl.textContent = fmtDate.format(simMs);
+    if (!jyoEl.hidden) updateJyo();
+    if (focus && !document.getElementById('info').hidden) infoJyo(focus.id);
+    subEl.innerHTML = helix
+      ? `travelled <b>${travelled.toExponential(2)}</b> km round the galaxy`
+      : `${simMs > Date.now() + DAY_MS ? 'future' : simMs < Date.now() - DAY_MS ? 'past' : 'today'} · planets at real positions`;
+  }
+
+  composer.render();
+  requestAnimationFrame(frame);
+}
+
+// ---------------------------------------------------------------- boot
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false); composer.setSize(w, h);
+  bloom.resolution.set(w, h);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize); resize();
+
+const loadbar = document.getElementById('loadbar');
+manager.onProgress = (_, done, total) => { loadbar.style.width = (done / total * 100) + '%'; };
+manager.onError = url => { document.getElementById('loadtxt').textContent = 'Could not load ' + url.split('/').pop(); };
+manager.onLoad = () => {
+  document.getElementById('loader').classList.add('done');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  flight = { t: reduce ? 1 : 0, dur: 4.2, fromCam: camera.position.clone(), toOff: new THREE.Vector3(0, 150, 300), fromTarget: new THREE.Vector3(), id: null };
+  controls.enabled = false;
+};
+frame();
+
+function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 </script>
 </body>
 </html>
