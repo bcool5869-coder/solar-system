@@ -118,7 +118,11 @@ const NAK_STARS = [
 const LORDS = ['Ketu', 'Shukra', 'Surya', 'Chandra', 'Mangal', 'Rahu', 'Guru', 'Shani', 'Budh'];
 const fmtDeg = x => { const d = Math.floor(x + 1e-9), m = Math.round((x - d) * 60); return m ? `${d}°${String(m).padStart(2, '0')}′` : `${d}°`; };
 
-// Painted rashi figures (Qwen Image 2.1, 2048px WebP), in rashi order.
+// Painted figures (Qwen Image 2.1, 2048px WebP), in order, one folder per kind.
+const NAK_ART = ['01-ashwini', '02-bharani', '03-krittika', '04-rohini', '05-mrigashira', '06-ardra', '07-punarvasu',
+  '08-pushya', '09-ashlesha', '10-magha', '11-purva-phalguni', '12-uttara-phalguni', '13-hasta', '14-chitra',
+  '15-swati', '16-vishakha', '17-anuradha', '18-jyeshtha', '19-mula', '20-purva-ashadha', '21-uttara-ashadha',
+  '22-shravana', '23-dhanishta', '24-shatabhisha', '25-purva-bhadrapada', '26-uttara-bhadrapada', '27-revati'];
 const ART = ['01-mesha', '02-vrishabha', '03-mithuna', '04-karka', '05-simha', '06-kanya',
   '07-tula', '08-vrischika', '09-dhanu', '10-makara', '11-kumbha', '12-meena'];
 
@@ -243,15 +247,16 @@ export function createSky(labelsEl, kind, onLabelClick) {
 
     // the painted figure, glowing over its own stars (black background drops out additively)
     let am = null;
-    if (kind === 'rashi') {
+    {
       am = new THREE.SpriteMaterial({ transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, color: 0xd8d8e8 });
       const art = new THREE.Sprite(am);
       art.position.copy(cen).multiplyScalar(1.01);
-      art.scale.setScalar(spread * 2.7);
+      // nakshatras sit only ~13° apart, so keep their paintings from overlapping
+      art.scale.setScalar(kind === 'rashi' ? spread * 2.7 : Math.min(Math.max(spread * 2.6, RADIUS * .16), RADIUS * .22));
       art.visible = false;          // until its texture has loaded
       group.add(art);
       am.userData.sprite = art;
-      am.userData.file = ART[F.idx];
+      am.userData.file = (kind === 'rashi' ? ART : NAK_ART)[F.idx];
     }
 
     // label just below the figure's lowest star
@@ -280,11 +285,11 @@ export function createSky(labelsEl, kind, onLabelClick) {
   let target = 0, fade = 0, time = 0, artLoaded = false;
   // paintings load the first time the rashi sky is shown, not with the page
   function loadArt() {
-    if (artLoaded || kind !== 'rashi') return;
+    if (artLoaded) return;
     artLoaded = true;
     const loader = new THREE.TextureLoader();
     for (const r of items) {
-      loader.load(`textures/rashi/${r.am.userData.file}.webp`, tex => {
+      loader.load(`textures/${kind}/${r.am.userData.file}.webp`, tex => {
         tex.colorSpace = THREE.SRGBColorSpace;
         r.am.map = tex; r.am.needsUpdate = true;
         r.am.userData.sprite.visible = true;

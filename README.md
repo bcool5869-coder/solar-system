@@ -45,7 +45,10 @@ Lahiri ayanamsa and mean Rahu/Ketu.
   all twelve) load only the first time you open the rashi sky
 - **Nakshatra**: all 27 nakshatras as their traditional star groups (Krittika is
   the Pleiades, Rohini is Aldebaran's "V", Hasta is the hand of Corvus, Shravana is
-  Altair and its two companions, Chitra is Spica)
+  Altair and its two companions, Chitra is Spica), each with a painting of its
+  traditional symbol: Ashwini's twin horse heads, Krittika's razor, Rohini's cart,
+  Ardra's teardrop, Hasta's open hand, Shravana's three footprints, Revati's pair
+  of fish, and so on (2048 px WebP, 10 MB for all 27, loaded only when opened)
 - **Off**
 
 The figures sit far beyond the planets, at their true positions in the sky, so they
